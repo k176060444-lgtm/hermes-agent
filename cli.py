@@ -13203,7 +13203,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         user_args = cmd_original[len(base_cmd):].strip()
                         aliased_command = f"/model {_key} {user_args}".strip()
                         return self.process_command(aliased_command)
-                except Exception:
+                except ImportError:
+                    # Graceful degradation if hermes_cli.model_switch isn't
+                    # available in this build. Anything else (a real bug in
+                    # alias resolution) bubbles up so we don't silently mask it.
                     pass
                 # Prefix matching: if input uniquely identifies one command, execute it.
                 # Matches against both built-in COMMANDS and installed skill commands so
