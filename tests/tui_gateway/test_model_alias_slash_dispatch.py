@@ -188,13 +188,13 @@ def test_non_alias_command_is_passed_through_unchanged(
     fake_worker = _make_worker_double()
     _install_worker(server, sess, fake_worker)
 
-    # /status is a built-in that must reach the mirror verbatim.
+    # /help is a command that reaches the mirror verbatim.
     r = server._methods["slash.exec"](
-        1, {"command": "/status", "session_id": sid}
+        1, {"command": "/help", "session_id": sid}
     )
     assert "result" in r
     assert len(captured) == 1
-    assert captured[0].lower() == "/status"
+    assert captured[0].lower() == "/help"
 
 
 def test_alias_unknown_command_does_not_rewrite_to_model(
