@@ -20000,6 +20000,107 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _unavail_msg = _check_unavailable_skill(command)
                     if _unavail_msg:
                         return _unavail_msg
+                    # Model-alias shortcut: /<alias> -> /model <alias>. Rewrites
+                    # the event to the canonical /model command so the same
+                    # per-platform access-control gate and ``command:model``
+                    # hook fire that a typed ``/model <alias>`` would. Done
+                    # AFTER plugins/skill bundles/skills/unavailable-skill
+                    # checks above so model aliases never pre-empt a
+                    # higher-priority command that happens to share a name.
+                    try:
+                        from hermes_cli.model_switch import _ensure_direct_aliases, DIRECT_ALIASES, MODEL_ALIASES
+                        _ensure_direct_aliases()
+                        _alias_key = command.strip().lower()
+                        if _alias_key in DIRECT_ALIASES or _alias_key in MODEL_ALIASES:
+                            # Rewrite event.text to the canonical /model
+                            # command. Any args the user typed AFTER the
+                            # alias name (e.g. /sonnet --provider X) ride
+                            # along verbatim.
+                            user_args = event.get_command_args().strip()
+                            event.text = f"/model {command} {user_args}".strip()
+                            # Now re-read args from the rewritten event so
+                            # the hook ctx matches what a typed /model
+                            # sonnet --provider X would see — the alias
+                            # name becomes the first positional arg, which
+                            # is exactly what _handle_model_command will
+                            # receive via parse_model_flags(raw_args).
+                            _alias_args = event.get_command_args().strip()
+                            _alias_canonical = "model"
+                            # Mirror the auth gate at line ~9406 so the same
+                            # per-platform allow_admin_from / user_allowed_commands
+                            # policy applies to /<alias> as to /model.
+                            _denied = self._check_slash_access(source, _alias_canonical)
+                            if _denied is not None:
+                                return _denied
+                            # Mirror the ``command:<canonical>`` hook at
+                            # line ~9418 so handlers can deny/handle the
+                            # model command the same way whether the user
+                            # typed /model or /<alias>.
+                            _hook_ctx = {
+                                "platform": source.platform.value if source.platform else "",
+                                "user_id": source.user_id,
+                                "command": _alias_canonical,
+                                "raw_command": command,
+                                "args": _alias_args,
+                                "raw_args": _alias_args,
+                            }
+                            try:
+                                _hook_results = await self.hooks.emit_collect(
+                                    f"command:{_alias_canonical}", _hook_ctx
+                                )
+                            except Exception as _hook_err:
+                                logger.debug(
+                                    "command:%s hook dispatch failed (non-fatal): %s",
+                                    _alias_canonical, _hook_err,
+                                )
+                                _hook_results = []
+                            for _hook_result in _hook_results:
+                                if not isinstance(_hook_result, dict):
+                                    continue
+                                _decision = str(_hook_result.get("decision", "")).strip().lower()
+                                if _decision == "deny":
+                                    _msg = _hook_result.get("message")
+                                    if isinstance(_msg, str) and _msg:
+                                        return _msg
+                                    return f"Command `/{command}` was blocked by a hook."
+                                if _decision == "handled":
+                                    _msg = _hook_result.get("message")
+                                    return _msg if isinstance(_msg, str) and _msg else None
+                                if _decision == "rewrite":
+                                    # Mirror the rewrite protocol at line ~9456:
+                                    # hook returns {"command_name": "<new>",
+                                    # "raw_args": "<args>"}; dispatcher rewrites
+                                    # event.text, re-resolves command/canonical,
+                                    # and breaks out of the hook loop without
+                                    # re-firing the hook for the new target
+                                    # (one decision per turn).
+                                    _new_command = str(
+                                        _hook_result.get("command_name", "")
+                                    ).strip().lstrip("/")
+                                    if not _new_command:
+                                        # Empty new command → no-op, same as
+                                        # canonical's `continue`.
+                                        continue
+                                    _new_args = str(
+                                        _hook_result.get("raw_args", "")
+                                    ).strip()
+                                    event.text = f"/{_new_command} {_new_args}".strip()
+                                    command = event.get_command()
+                                    _cmd_def = _resolve_cmd(command) if command else None
+                                    canonical = _cmd_def.name if _cmd_def else command
+                                    # Don't return — fall through to the
+                                    # _handle_model_command dispatch below so a
+                                    # hook rewriting within the model namespace
+                                    # still routes through the canonical /model
+                                    # handler with the rewritten args.
+                                    break
+                                # 'allow' / unrecognised decision: fall through to dispatch
+                            return await self._handle_model_command(event)
+                    except ImportError:
+                        # Graceful degradation if hermes_cli.model_switch isn't
+                        # available in this build. Anything else (real bug)
+                        # bubbles up so we don't swallow it.
+                        pass
                     # Genuinely unrecognized /command: not a built-in, not a
                     # plugin, not a skill, not a known-inactive skill. Warn
                     # the user instead of silently forwarding it to the LLM
@@ -24525,7 +24626,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # post-stream delivery is explicit-only (#20834). Bare local paths
             # in an already-streamed reply are text the user has seen (or
             # stale inspected content), not an attachment request.
-            adapter.extract_images(cleaned)
+            # Capture extracted images for dedup with MEDIA paths below
+            _stream_extracted_images, cleaned = adapter.extract_images(cleaned)
 
             _thread_meta = (
                 dict(thread_metadata)
@@ -24543,23 +24645,48 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # (e.g. Signal's multi-attachment RPC). When [[as_document]] was
             # set, image-extension files skip the photo path and route to
             # send_document below — preserving original bytes.
-            image_paths: list = []
+            image_delivery: list = []
             non_image_media: list = []
+            delivery_keys: set = set()
             for media_path, is_voice in media_files:
                 ext = Path(media_path).suffix.lower()
                 if (ext in _IMAGE_EXTS
                         and not is_voice
                         and not force_document_attachments):
-                    image_paths.append(media_path)
+                    image_delivery.append((f"file://{_quote(media_path)}", ""))
+                    delivery_keys.add(("local", os.path.normcase(media_path)))
                 else:
                     non_image_media.append((media_path, is_voice))
 
-            if image_paths:
+            # Also include explicit image tags (HTTP(S) or file:// URIs)
+            # from extract_images, deduplicated against MEDIA paths.
+            # Uses canonical local-path keys from the resolved MEDIA paths
+            # and `_normalize_file_url` for file:// extracted images so:
+            #   - foo.png and foo.png.backup.png (different files) both deliver
+            #   - file://C:/a.png and file:///C:/a.png (same file) deliver once
+            #   - MEDIA:/a.png and file:///C:/a.png (same file) deliver once
+            # HTTP(S) URLs use exact-string comparison.
+            # Namespace tuples prevent accidental collision between local paths
+            # and URL strings.
+            for img_url, img_alt in _stream_extracted_images:
+                if img_url.lower().startswith('file://'):
+                    normed = BasePlatformAdapter._normalize_file_url(img_url)
+                    if normed:
+                        key = ("local", os.path.normcase(normed))
+                        if key in delivery_keys:
+                            continue
+                        delivery_keys.add(key)
+                elif ("local", img_url) in delivery_keys or ("url", img_url) in delivery_keys:
+                    continue
+                else:
+                    delivery_keys.add(("url", img_url))
+                image_delivery.append((img_url, img_alt))
+
+            if image_delivery:
                 try:
-                    images = [(f"file://{_quote(p)}", "") for p in image_paths]
                     await adapter.send_multiple_images(
                         chat_id=event.source.chat_id,
-                        images=images,
+                        images=image_delivery,
                         metadata=_thread_meta,
                     )
                 except Exception as e:
@@ -24843,13 +24970,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         metadata=_thread_metadata,
                     )
 
-                # Send extracted images
-                for image_url, alt_text in (images or []):
+                # Send extracted images via send_multiple_images so that
+                # ``file://`` URIs reach ``send_image_file`` (decoded) instead
+                # of being passed as a literal pathname to ``send_image``.
+                # Build canonical dedup keys from file:// images so the
+                # media_files loop below does NOT re-send the same file.
+                _image_dedup_keys: set = set()
+                for img_url, _ in (images or []):
+                    if img_url.lower().startswith('file://'):
+                        _n = BasePlatformAdapter._normalize_file_url(img_url)
+                        if _n:
+                            _image_dedup_keys.add(os.path.normcase(_n))
+                if images:
                     try:
-                        await adapter.send_image(
+                        await adapter.send_multiple_images(
                             chat_id=source.chat_id,
-                            image_url=image_url,
-                            caption=alt_text,
+                            images=images,
                             metadata=_thread_metadata,
                         )
                     except Exception:
@@ -24880,11 +25016,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 metadata=_thread_metadata,
                             )
                         elif _ext in _IMAGE_EXTS:
-                            await adapter.send_image_file(
-                                chat_id=source.chat_id,
-                                image_path=media_path,
-                                metadata=_thread_metadata,
-                            )
+                            if os.path.normcase(media_path) not in _image_dedup_keys:
+                                await adapter.send_image_file(
+                                    chat_id=source.chat_id,
+                                    image_path=media_path,
+                                    metadata=_thread_metadata,
+                                )
                         else:
                             await adapter.send_document(
                                 chat_id=source.chat_id,
