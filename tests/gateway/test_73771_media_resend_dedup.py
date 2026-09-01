@@ -495,7 +495,14 @@ async def test_streamed_explicit_media_resend_is_delivered(tmp_path, monkeypatch
 
     adapter.send_multiple_images.assert_awaited_once()
     sent_paths = [p for p, _cap in adapter.send_multiple_images.await_args.kwargs["images"]]
-    assert str(img) in sent_paths[0]
+    # The delivery lane wraps local paths as Windows quote-encoded file://
+    # URIs (decoded by send_image_file); accept either the raw path or the
+    # encoded URI form.
+    from urllib.parse import unquote as _unquote
+    assert any(
+        str(img) in p or str(img) in _unquote(p.replace("\\\\", "\\"))
+        for p in sent_paths
+    )
 
 
 def test_stream_rescan_accepts_no_history_dedup_input():
