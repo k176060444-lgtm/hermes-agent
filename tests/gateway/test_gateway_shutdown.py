@@ -175,9 +175,9 @@ async def test_planned_service_exit_issues_no_restart_of_its_own(monkeypatch):
     assert runner._exit_code == GATEWAY_SERVICE_RESTART_EXIT_CODE
 
 
+@pytest.mark.asyncio
 async def test_unexpected_signal_starts_teardown_after_bounded_interrupt_grace():
     runner, adapter = make_restart_runner()
-    attach_real_stop(runner)
     attach_real_stop(runner)
     runner._restart_drain_timeout = 0.0
     runner._signal_initiated_shutdown = True
