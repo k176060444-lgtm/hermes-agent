@@ -6,6 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
+import os
 
 import asyncio
 import dataclasses
@@ -277,7 +278,7 @@ class GatewayNotificationsMixin:
             # the same filter removal on the non-streaming path in gateway/platforms/base.py. Bare local
             # paths in an already-streamed reply are text the user has seen (or stale inspected content),
             # not an attachment request.
-            adapter.extract_images(cleaned)
+            _stream_extracted_images, cleaned = adapter.extract_images(cleaned)
             _thread_meta = (
                 dict(thread_metadata)
                 if thread_metadata is not None
@@ -289,12 +290,33 @@ class GatewayNotificationsMixin:
                 ext = Path(media_path).suffix.lower()
                 return ext in _IMAGE_EXTS and not is_voice and not force_document_attachments
 
-            image_paths = [p for p, v in media_files if _is_photo(p, v)]
-            non_image_media = [(p, v) for p, v in media_files if not _is_photo(p, v)]
-            if image_paths:
+            image_delivery: list = []
+            non_image_media: list = []
+            delivery_keys: set = set()
+            for media_path, is_voice in media_files:
+                if _is_photo(media_path, is_voice):
+                    image_delivery.append((f"file://{_quote(media_path)}", ""))
+                    delivery_keys.add(("local", os.path.normcase(media_path)))
+                else:
+                    non_image_media.append((media_path, is_voice))
+
+            for img_url, img_alt in _stream_extracted_images:
+                if img_url.lower().startswith('file://'):
+                    normed = BasePlatformAdapter._normalize_file_url(img_url)
+                    if normed:
+                        key = ("local", os.path.normcase(normed))
+                        if key in delivery_keys:
+                            continue
+                        delivery_keys.add(key)
+                elif ("local", img_url) in delivery_keys or ("url", img_url) in delivery_keys:
+                    continue
+                else:
+                    delivery_keys.add(("url", img_url))
+                image_delivery.append((img_url, img_alt))
+
+            if image_delivery:
                 try:
-                    images = [(f"file://{_quote(p)}", "") for p in image_paths]
-                    await adapter.send_multiple_images(chat_id=chat_id, images=images, metadata=_thread_meta)
+                    await adapter.send_multiple_images(chat_id=chat_id, images=image_delivery, metadata=_thread_meta)
                 except Exception as e:
                     logger.warning("[%s] Post-stream image batch delivery failed: %s", adapter.name, e)
             for media_path, is_voice in non_image_media:
@@ -611,7 +633,13 @@ class GatewayNotificationsMixin:
 
     async def _send_restart_notification(self) -> Optional[tuple[str, str, Optional[str]]]:
         """Notify the chat that initiated /restart that the gateway is back."""
-        from gateway.delivery import resolve_delivery_transport
+        try:
+            import gateway.run as _gw_run
+            resolve_delivery_transport = getattr(_gw_run, "resolve_delivery_transport", None)
+            if resolve_delivery_transport is None:
+                from gateway.delivery import resolve_delivery_transport
+        except Exception:
+            from gateway.delivery import resolve_delivery_transport
         from gateway.run import _hermes_home, _non_conversational_metadata
         notify_path = _hermes_home / ".restart_notify.json"
         if not notify_path.exists():
@@ -640,8 +668,22 @@ class GatewayNotificationsMixin:
                 for field in ("user_id", "scope_id"):
                     if data.get(field):
                         metadata[field] = str(data[field])
+            if data.get("outcome") == "unknown":
+                message = (
+                    "⚠ Gateway restart result could not be confirmed. "
+                    "The gateway is currently online; please verify and "
+                    "retry if needed."
+                )
+                logger.info(
+                    "Restart notification: outcome=unknown marker -> uncertain message to %s:%s",
+                    platform_str,
+                    chat_id,
+                )
+            else:
+                message = "♻ Gateway restarted successfully. Your session continues."
+
             result = await transport.send(
-                platform, str(chat_id), "♻ Gateway restarted successfully. Your session continues.",
+                platform, str(chat_id), message,
                 metadata=_non_conversational_metadata(metadata, platform=platform),
             )
             # adapter.send() catches provider errors (e.g. "Chat not found") and returns

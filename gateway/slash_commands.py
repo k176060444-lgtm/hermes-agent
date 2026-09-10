@@ -1049,8 +1049,8 @@ class GatewaySlashCommandsMixin(
             self._restart_retry_blocked_until = 0.0
 
         request_id = f"req-{uuid.uuid4().hex[:8]}"
-        notify_path = _hermes_home / ".restart_notify.json"
-        dedup_path = _hermes_home / ".restart_last_processed.json"
+        notify_path = Path(_hermes_home) / ".restart_notify.json"
+        dedup_path = Path(_hermes_home) / ".restart_last_processed.json"
         backup = _RestartStateBackup(
             request_id=request_id,
             notify_path=notify_path,

@@ -1015,7 +1015,7 @@ class GatewayBusySessionMixin:
         restart; otherwise the marker must be < 5 minutes old. Telegram only (numeric ordering).
         """
         from gateway.run import _hermes_home
-        if event is None or event.source is None or event.platform_update_id is None:
+        if event is None or event.source is None:
             return False
         try:
             if event.source.platform.value != "telegram":
@@ -1044,12 +1044,35 @@ class GatewayBusySessionMixin:
         except Exception:
             return False
 
-        recorded_uid = data.get("update_id")
-        if (
-            data.get("platform") != "telegram"
-            or not isinstance(recorded_uid, int)
-            or event.platform_update_id > recorded_uid
-        ):
+        origin = data.get("origin", "slash_command")
+        if origin == "slash_command":
+            recorded_uid = data.get("update_id")
+            if (
+                data.get("platform") != "telegram"
+                or not isinstance(recorded_uid, int)
+                or event.platform_update_id is None
+                or event.platform_update_id > recorded_uid
+            ):
+                return False
+        elif origin == "agent_tool":
+            recorded_chat_id = data.get("chat_id")
+            recorded_thread_id = data.get("thread_id")
+            recorded_msg_id = data.get("message_id")
+
+            evt_chat_id = event.source.chat_id
+            evt_thread_id = event.source.thread_id or None
+            evt_msg_id = str(event.message_id) if event.message_id is not None else None
+
+            if (
+                evt_chat_id == recorded_chat_id
+                and evt_thread_id == (recorded_thread_id or None)
+                and evt_msg_id is not None
+                and recorded_msg_id is not None
+                and evt_msg_id == str(recorded_msg_id)
+            ):
+                if getattr(self, "_booted_from_restart", False):
+                    self._booted_from_restart = False
+                return True
             return False
 
         # A service-managed restart can outlast the 5-minute trust window; consume the boot

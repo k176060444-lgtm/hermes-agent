@@ -838,3 +838,5 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
 # The whole block is removed by reverting the commit that added it.
 import json  # noqa: F401,E402
 # ---- END PLUGIN-COMPAT ----
+
+from gateway.session import SessionSource  # noqa: F401 (re-export)

@@ -1139,9 +1139,70 @@ class GatewayInboundMixin:
         if not _handled:
             _handled, _result, command = await self._hm_dispatch_quick_and_plugin_commands(event, source, command)
         if not _handled:
+            _handled, _result = await self._hm_dispatch_model_alias(event, source, command)
+        if not _handled:
             _result = self._hm_skill_slash_rewrite(event, source, _quick_key, command)
             _handled = _result is not None
         return _handled, _result
+
+
+    async def _hm_dispatch_model_alias(
+        self, event: "MessageEvent", source: SessionSource, command: Optional[str]
+    ) -> Tuple[bool, Optional[str]]:
+        """Model-alias shortcut: /<alias> -> /model <alias>."""
+        if not command:
+            return False, None
+        try:
+            from hermes_cli.model_switch import (
+                _ensure_direct_aliases, DIRECT_ALIASES, MODEL_ALIASES
+            )
+            _ensure_direct_aliases()
+            _alias_key = command.strip().lower()
+            if _alias_key in DIRECT_ALIASES or _alias_key in MODEL_ALIASES:
+                user_args = event.get_command_args().strip()
+                event.text = f"/model {command} {user_args}".strip()
+                _alias_args = event.get_command_args().strip()
+                _alias_canonical = "model"
+                _denied = self._check_slash_access(source, _alias_canonical)
+                if _denied is not None:
+                    return True, _denied
+                _hook_ctx = {
+                    "platform": source.platform.value if source.platform else "",
+                    "user_id": source.user_id,
+                    "command": _alias_canonical,
+                    "raw_command": command,
+                    "args": _alias_args,
+                    "raw_args": _alias_args,
+                }
+                try:
+                    _hook_results = await self.hooks.emit_collect(
+                        f"command:{_alias_canonical}", _hook_ctx
+                    )
+                except Exception as _hook_err:
+                    logger.debug("command:%s hook dispatch failed: %s", _alias_canonical, _hook_err)
+                    _hook_results = []
+                for _hook_result in _hook_results:
+                    if not isinstance(_hook_result, dict):
+                        continue
+                    _decision = str(_hook_result.get("decision", "")).strip().lower()
+                    if _decision == "deny":
+                        _msg = _hook_result.get("message")
+                        return True, _msg if isinstance(_msg, str) and _msg else f"Command  was blocked by a hook."
+                    if _decision == "handled":
+                        _msg = _hook_result.get("message")
+                        return True, _msg if isinstance(_msg, str) and _msg else None
+                    if _decision == "rewrite":
+                        _new_command = str(_hook_result.get("command_name", "")).strip().lstrip("/")
+                        if not _new_command:
+                            continue
+                        _new_args = str(_hook_result.get("raw_args", "")).strip()
+                        event.text = f"/{_new_command} {_new_args}".strip()
+                        break
+                result = await self._handle_model_command(event)
+                return True, result
+        except ImportError:
+            pass
+        return False, None
 
     def _hm_rescue_orphaned_fifo(
         self, event: "MessageEvent", source: SessionSource, is_internal: bool, _quick_key: str
@@ -1184,6 +1245,15 @@ class GatewayInboundMixin:
         if _admitted is None:
             return None
         event, source, is_internal = _admitted
+
+        if self._is_stale_restart_redelivery(event):
+            logger.info(
+                "Suppressing stale restart redelivery message on platform=%s chat=%s msg=%s",
+                source.platform.value if source.platform else "unknown",
+                getattr(source, "chat_id", None),
+                getattr(event, "message_id", None),
+            )
+            return ""
 
         _paused_notice = self._hm_estop_gate(event, source, is_internal)
         if _paused_notice is not None:
