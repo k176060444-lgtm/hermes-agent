@@ -2990,8 +2990,8 @@ class BasePlatformAdapter(ABC):
             return content
         # Value-context string: quote preceded by : , { or [; escape-aware body to the closing quote.
         spans = [
-            m.span(1) for m in re.finditer(r'(?<=[:,{\[])\s*"((?:[^"\n]|\.)*)"', content)
-            if re.search(r'(?:MEDIA:\s*(?:~/|/|[A-Za-z]:[/\])|file://)', m.group(1), re.IGNORECASE)]
+            m.span(1) for m in re.finditer(r'(?<=[:,{\[])\s*"((?:[^"\\\n]|\\.)*)"', content)
+            if re.search(r'(?:MEDIA:\s*(?:~/|/|[A-Za-z]:[/\\])|file://)', m.group(1), re.IGNORECASE)]
         return _blank_spans(content, spans)
     @staticmethod
     def extract_media(content: str) -> Tuple[List[Tuple[str, bool]], str]:
