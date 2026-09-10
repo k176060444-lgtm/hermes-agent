@@ -1449,7 +1449,7 @@ class GatewayShutdownMixin:
         return watcher_env
 
     @staticmethod
-    def _spawn_windows_restart_watcher(hermes_cmd: list, current_pid: int, restart_after_s: float) -> None:
+    def _spawn_windows_restart_watcher(hermes_cmd: list, current_pid: int, restart_after_s: float) -> bool:
         """Spawn the detached Windows watcher (``python -c``), retrying once without job breakaway."""
         import subprocess
         from hermes_cli._subprocess_compat import (
@@ -1480,11 +1480,13 @@ class GatewayShutdownMixin:
         # BREAKAWAY_OK rejects CREATE_BREAKAWAY_FROM_JOB (OSError) — retry once without the bit.
         try:
             subprocess.Popen(watcher_argv, **popen_kwargs, **windows_detach_popen_kwargs())
+            return True
         except OSError:
             try:
                 subprocess.Popen(
                     watcher_argv, **popen_kwargs, creationflags=windows_detach_flags_without_breakaway(),
                 )
+                return True
             except OSError as exc:
                 # Both spawns failed. Log only the interpreter basename and numeric errno — never
                 # argv, env, watcher source, or str(exc) (may carry a full path) — and return.
@@ -1496,23 +1498,23 @@ class GatewayShutdownMixin:
                     "winerror" if winerror is not None else "errno",
                     winerror if winerror is not None else exc.errno,
                 )
+                return False
 
-    async def _launch_detached_restart_command(self) -> None:
+    async def _launch_detached_restart_command(self) -> bool:
         from gateway.run import _resolve_hermes_bin
         import shutil
         import subprocess
         hermes_cmd = _resolve_hermes_bin()
         if not hermes_cmd:
             logger.error("Could not locate hermes binary for detached /restart")
-            return
+            return False
         if self._detached_restart_helper_started:
-            return
+            return True
         self._detached_restart_helper_started = True
         current_pid = os.getpid()
         restart_after_s = max(float(getattr(self, "_restart_drain_timeout", 0.0) or 0.0) + 5.0, 5.0)
         if sys.platform == "win32":
-            GatewayShutdownMixin._spawn_windows_restart_watcher(hermes_cmd, current_pid, restart_after_s)
-            return
+            return bool(GatewayShutdownMixin._spawn_windows_restart_watcher(hermes_cmd, current_pid, restart_after_s))
         cmd = " ".join(shlex.quote(part) for part in hermes_cmd)
         shell_cmd = (
             f"deadline=$(( $(date +%s) + {int(restart_after_s)} )); "
@@ -1521,10 +1523,14 @@ class GatewayShutdownMixin:
         )
         setsid_bin = shutil.which("setsid")
         argv = [setsid_bin, "bash", "-lc", shell_cmd] if setsid_bin else ["bash", "-lc", shell_cmd]
-        subprocess.Popen(
-            argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            env=GatewayShutdownMixin._restart_watcher_env(), start_new_session=True,
-        )
+        try:
+            subprocess.Popen(
+                argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=GatewayShutdownMixin._restart_watcher_env(), start_new_session=True,
+            )
+            return True
+        except Exception:
+            return False
 
     def _wedged_agent_count(self) -> int:
         """Running chat agents with no activity for ``agent.gateway_timeout`` (0 when disabled).
