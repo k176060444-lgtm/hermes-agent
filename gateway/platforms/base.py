@@ -2813,7 +2813,7 @@ class BasePlatformAdapter(ABC):
     def extract_images(content: str) -> Tuple[List[Tuple[str, str]], str]:
         """
         Extract image URLs from markdown and HTML image tags in a response.
-        
+
         Finds patterns like:
         - ![alt text](https://example.com/image.png)
         - <img src="https://example.com/image.png">
@@ -2825,10 +2825,10 @@ class BasePlatformAdapter(ABC):
         validated through :func:`validate_media_delivery_path`.  Invalid,
         missing, unsafe or non-image ``file://`` candidates are silently
         skipped so the original text is never deleted.
-        
+
         Args:
             content: The response text to scan.
-        
+
         Returns:
             Tuple of (list of (url, alt_text) pairs, cleaned content with image tags removed).
         """
