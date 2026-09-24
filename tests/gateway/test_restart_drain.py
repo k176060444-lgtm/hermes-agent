@@ -1,3 +1,4 @@
+import shutil
 import asyncio
 import subprocess
 import time
@@ -358,6 +359,7 @@ async def test_restart_from_served_profile_chat_restarts_the_host_gateway(monkey
     (profile_home / ".env").write_text("RESEARCH_ONLY_TOKEN=x\n", encoding="utf-8")
 
     runner, _adapter = make_restart_runner()
+    attach_real_launcher_under_mocked_popen(runner)
     seen = {}
 
     async def _recording_stop(**_kwargs):

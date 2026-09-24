@@ -339,6 +339,8 @@ def test_pid_exists_zombie_via_psutil_returns_false(monkeypatch):
 
     from gateway import status
 
+    monkeypatch.setattr(status.os, "name", "posix")
+
     fake_psutil = types.SimpleNamespace()
     fake_psutil.STATUS_ZOMBIE = "zombie"
 

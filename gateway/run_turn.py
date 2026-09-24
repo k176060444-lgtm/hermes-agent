@@ -2507,16 +2507,31 @@ class GatewayTurnMixin:
                 await adapter.send(
                     chat_id=source.chat_id, content=header + "(No response generated)", metadata=_thread_metadata,
                 )
-            for image_url, alt_text in (images or []):
+            # Send extracted images via send_multiple_images so that
+            # file:// URIs reach send_image_file (decoded) instead of send_image.
+            # Build canonical dedup keys from file:// images so the media_files loop
+            # does not re-send the same file.
+            _image_dedup_keys: set = set()
+            for img_url, _ in (images or []):
+                if img_url.lower().startswith('file://'):
+                    _n = BasePlatformAdapter._normalize_file_url(img_url)
+                    if _n:
+                        _image_dedup_keys.add(os.path.normcase(_n))
+            if images:
                 with suppress(Exception):
-                    await adapter.send_image(
-                        chat_id=source.chat_id, image_url=image_url, caption=alt_text, metadata=_thread_metadata,
+                    await adapter.send_multiple_images(
+                        chat_id=source.chat_id,
+                        images=images,
+                        metadata=_thread_metadata,
                     )
+
             # Route each media file by type (voice bubble / video / image / document), as the
             # streaming + kanban paths do.
             from gateway.platforms.base import should_send_media_as_audio as _should_send_media_as_audio
             from gateway.run_notifications import _IMAGE_EXTS, _VIDEO_EXTS
             for media_path, _is_voice in (media_files or []):
+                if os.path.normcase(media_path) in _image_dedup_keys:
+                    continue
                 _ext = os.path.splitext(media_path)[1].lower()
                 with suppress(Exception):
                     if _should_send_media_as_audio(source.platform, _ext, _is_voice):
