@@ -682,12 +682,16 @@ def _transcribe_gemini(
     )
     from tools.transcription_tools import _load_stt_config, _resolve_provider_key, _resolve_stt_language
 
-    api_key = _resolve_provider_key("GEMINI_API_KEY", "gemini") or _resolve_provider_key("GOOGLE_API_KEY", "gemini")
+    stt_config = _load_stt_config()
+    gemini_config = _get_stt_section(stt_config, "gemini")
+    api_key = (
+        str(gemini_config.get("api_key") or "").strip()
+        or _resolve_provider_key("GEMINI_API_KEY", "gemini")
+        or _resolve_provider_key("GOOGLE_API_KEY", "gemini")
+    )
     if not api_key:
         return _error_result("GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey")
 
-    stt_config = _load_stt_config()
-    gemini_config = _get_stt_section(stt_config, "gemini")
     base_url = str(
         gemini_config.get("base_url") or get_env_value("GEMINI_BASE_URL") or GEMINI_STT_BASE_URL
     ).strip().rstrip("/")

@@ -504,7 +504,8 @@ def _gemini_audio_tags_enabled(gemini_config: Dict[str, Any], model: str) -> boo
 
 
 def _is_gemini_38_tts(model: str) -> bool:
-    return model.lower().rsplit("/", 1)[-1] in {"gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"}
+    norm = re.sub(r"[\s_]+", "-", model.lower()).rsplit("/", 1)[-1]
+    return norm in {"gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"}
 
 
 def _rewrite_gemini_tts_audio_tags(text: str, persona_prompt: str = "") -> str:
@@ -598,11 +599,14 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
                          instructions: Optional[str] = None) -> str:
     """Generate audio via Gemini ``generateContent``; decode WAV or PCM by response MIME."""
     origin = _origin()
-    api_key = origin._resolve_provider_key("GEMINI_API_KEY", "gemini") or origin._resolve_provider_key(
-        "GOOGLE_API_KEY", "gemini")
+    gemini_config = _section(tts_config, "gemini")
+    api_key = (
+        str(gemini_config.get("api_key") or "").strip()
+        or origin._resolve_provider_key("GEMINI_API_KEY", "gemini")
+        or origin._resolve_provider_key("GOOGLE_API_KEY", "gemini")
+    )
     if not api_key:
         raise ValueError("GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey")
-    gemini_config = _section(tts_config, "gemini")
     model = str(gemini_config.get("model", DEFAULT_GEMINI_TTS_MODEL)).strip() or DEFAULT_GEMINI_TTS_MODEL
     voice = str(gemini_config.get("voice", DEFAULT_GEMINI_TTS_VOICE)).strip() or DEFAULT_GEMINI_TTS_VOICE
     from hermes_cli.config import get_env_value
