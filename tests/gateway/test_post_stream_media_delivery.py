@@ -6,10 +6,15 @@ text is either text the user already saw, or stale inspected/tool content —
 it is NOT an attachment request. Only explicit ``MEDIA:`` directives may
 trigger post-stream uploads.
 
-The non-streaming path (``gateway/platforms/base.py``) keeps its bare-path
-auto-detect (``extract_local_files``) — that path controls what text is sent
-and can strip the path from the visible reply, so auto-attach is intentional
-there. This file pins the asymmetry.
+The non-streaming path (``gateway/platforms/base.py``) kept its bare-path
+auto-detect (``extract_local_files``) upstream — that path controls what text
+is sent and can strip the path from the visible reply, so auto-attach is
+intentional there. This file pins the asymmetry.
+
+(Local patch 2026-09-25: the dispatch site in ``_extract_response_content`` is
+additionally restricted to explicit ``MEDIA:`` tags on this install — see
+``test_bare_path_no_autoattach.py``. The post-stream contract pinned here is
+unchanged.)
 """
 
 from types import SimpleNamespace

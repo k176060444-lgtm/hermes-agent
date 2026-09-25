@@ -3450,6 +3450,35 @@ class BasePlatformAdapter(ABC):
             return text
         return re.sub(r'\n{3,}', '\n\n', _strip_media_tag_directives(text)).rstrip()
 
+    # Explicit ``MEDIA:<path>`` tags only (any extension). Local patch 2026-09-25 (PR #20843
+    # philosophy applied to the dispatch site): bare prose paths are NEVER auto-attached here —
+    # a path mentioned in prose stays text. Tags inside code spans are left untouched (docs).
+    _MEDIA_TAG_ANY_PATH_RE = re.compile(
+        r'MEDIA:\s*(?P<q>["\']?)((?:[A-Za-z]:[/\\]|/|~/)[^\s"\']+)(?P=q)', re.IGNORECASE)
+
+    @classmethod
+    def _extract_media_tag_local_files(cls, content: str) -> Tuple[List[str], str]:
+        """Explicit ``MEDIA:<path>`` tags (any extension) -> ``(existing_paths, tag-stripped text)``."""
+        code_spans = _code_spans(content)
+        found: dict = {}
+
+        def _sub(m: "re.Match[str]") -> str:
+            if any(s <= m.start() < e for s, e in code_spans):
+                return m.group(0)
+            raw = m.group(2).rstrip('.,;:)]}')
+            try:
+                expanded = os.path.expanduser(raw)
+            except (OSError, RuntimeError, ValueError):
+                return ''
+            if os.path.isfile(expanded):
+                found.setdefault(expanded, raw)
+            else:
+                logger.info("Skipping MEDIA path in reply (no file on disk): %s", _log_safe_path(raw))
+            return ''
+
+        cleaned = cls._MEDIA_TAG_ANY_PATH_RE.sub(_sub, content)
+        return list(found), re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
     @staticmethod
     def extract_local_files(content: str) -> Tuple[List[str], str]:
         """Bare local file paths (absolute, ``~/`` or drive-letter) with deliverable extensions ->
@@ -4523,9 +4552,9 @@ class BasePlatformAdapter(ABC):
     async def _extract_response_content(self, response: str, event: MessageEvent, session_key: str,
                                         *, is_ephemeral_response: bool) -> "_ExtractedResponse":
         """Split a handler response into deliverable text + attachments. Order matters: MEDIA tags →
-        image URLs → residual directives → bare local paths (skipped for ephemeral notices so config
-        paths stay text; unknown-extension MEDIA tags survive for the bare-path detector). History
-        dedup is bare-path only, off-loop, fail-open. An emptied non-empty response is recovered."""
+        image URLs → residual directives → explicit MEDIA:-tag local paths only (local patch
+        2026-09-25: bare prose paths are never auto-attached and stay text). History dedup is
+        off-loop, fail-open. An emptied non-empty response is recovered."""
         # Captured before extract_media strips it: images then go via send_document (no recompression).
         force_document = "[[as_document]]" in response
         pre_extract = response
@@ -4543,7 +4572,8 @@ class BasePlatformAdapter(ABC):
                 logger.info("[%s] extract_images found %d image(s) in response (%d chars)", self.name, len(images), len(response))
             local_files = []
             if not is_ephemeral_response:
-                local_files, text_content = self.extract_local_files(text_content)
+                # Local patch 2026-09-25: explicit MEDIA: tags only — bare prose paths stay text.
+                local_files, text_content = self._extract_media_tag_local_files(text_content)
                 local_files = self.filter_local_delivery_paths(local_files, session_key=session_key)
         history = (await self._bounded_history_media_paths_for_session(session_key)
                    if local_files else None)
