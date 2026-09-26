@@ -1688,6 +1688,9 @@ stt:
   #   custom_vocabulary:              # optional custom terminology hints (up to 1,000 terms)
   #     - "Hermes"
   #     - "QQBot"
+  # minimax:
+  #   model: "asr-1.0"
+  #   region: "cn"                    # "cn" (default if MINIMAX_CN_API_KEY) | "global"
 
 # Text-to-speech. Only the deepinfra block is documented here — the
 # remaining providers (edge, openai, xai, minimax, mistral, gemini,

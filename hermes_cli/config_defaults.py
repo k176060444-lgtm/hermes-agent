@@ -1197,6 +1197,11 @@ DEFAULT_CONFIG = {
             "language": "",  # auto-detect; accepts "en", "zh", or BCP-47 tags like "en-US", "cmn-Hans-CN"
             "timeout": 60,
         },
+        "minimax": {
+            "model": "asr-1.0",
+            "region": "cn",  # "cn" | "global" (empty = auto-detect based on configured key)
+            "timeout": 60,
+        },
     },
 
     "voice": {
