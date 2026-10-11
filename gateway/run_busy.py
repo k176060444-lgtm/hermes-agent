@@ -1181,12 +1181,6 @@ class GatewayBusySessionMixin:
         if event is None or event.source is None:
             return False
         try:
-            if event.source.platform.value != "telegram":
-                return False
-        except Exception:
-            return False
-
-        try:
             marker_path = _hermes_home / ".restart_last_processed.json"
             if not marker_path.exists():
                 # Missing marker: a redelivered /restart would otherwise re-restart forever. Suppress
@@ -1209,6 +1203,8 @@ class GatewayBusySessionMixin:
 
         origin = data.get("origin", "slash_command")
         if origin == "slash_command":
+            if event.source.platform is None or event.source.platform.value != "telegram":
+                return False
             recorded_uid = data.get("update_id")
             if (
                 data.get("platform") != "telegram"

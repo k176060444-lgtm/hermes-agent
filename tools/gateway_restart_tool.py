@@ -3,7 +3,7 @@
 Gated by _HERMES_GATEWAY=1 env var and restricted exclusively to direct user-facing
 foreground Gateway turns. Refuses invocation from cron jobs, delegated subagents,
 Kanban workers, or CLI sessions. Reuses the same slash-access policy that /restart
-uses, so a user who can't run /restart can't run this tool either.
+uses, so a user who cannot run /restart cannot run this tool either.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ _SCHEMA = {
             "Request a safe restart of the running Hermes Gateway process when the user "
             "explicitly and unambiguously requests a restart via natural language "
             "(e.g., 'please restart the gateway', 'reboot yourself'). "
-            "This tool initiates an out-of-band detached handoff and drains current turns. "
-            "DO NOT execute shell-level commands like 'schtasks', 'taskkill', or 'hermes gateway restart'."
+            "This tool initiates a graceful drain and restart handoff. "
+            "Do not execute external shell commands to terminate the process."
         ),
         "parameters": {
             "type": "object",
@@ -48,7 +48,7 @@ def _is_authorized_foreground_turn() -> bool:
 
     Refuses:
     1. Outside Gateway process (_HERMES_GATEWAY != "1").
-    2. Delegated subagent execution (is_delegated_child_process_context() is True).
+    2. Delegated child subagent execution.
     3. Kanban workers (HERMES_KANBAN_TASK or any KANBAN_ENV_KEYS present in env).
     4. Scheduled cron jobs (HERMES_CRON_AUTO_DELIVER_PLATFORM ContextVar set).
     5. ContextVars missing platform or chat_id (e.g. background tasks or CLI).
@@ -90,32 +90,22 @@ def _is_authorized_foreground_turn() -> bool:
 
 
 def _check_restart_policy(runner: Any, source: Any) -> Optional[str]:
-    """Reuse the /restart slash-access policy.
-
-    Returns a denial message string if the user is not allowed to run the
-    ``restart`` slash command on this scope, else None. When the operator has
-    not configured ``allow_admin_from`` / ``user_allowed_commands`` for the
-    scope, ``policy.enabled`` is False and the request is allowed (matches
-    the existing /restart backward-compat semantics).
-    """
+    """Reuse the /restart slash-access policy."""
     if source is None or runner is None:
         return None
     try:
         from gateway.slash_access import policy_for_source as _policy_for_source
-    except Exception:
-        return None
-    try:
         policy = _policy_for_source(getattr(runner, "config", None), source)
+        if not policy.enabled:
+            return None
+        user_id = getattr(source, "user_id", None) or ""
+        if not policy.is_admin(user_id) and not policy.can_run(user_id, "restart"):
+            return (
+                "Not allowed to run /restart on this scope. "
+                "Ask an admin to grant restart access."
+            )
     except Exception:
         return None
-    if not policy.enabled:
-        return None
-    user_id = getattr(source, "user_id", None) or ""
-    if not policy.is_admin(user_id) and not policy.can_run(user_id, "restart"):
-        return (
-            "Not allowed to run /restart on this scope. "
-            "Ask an admin to grant restart access."
-        )
     return None
 
 
@@ -123,8 +113,6 @@ def check_fn() -> bool:
     """Check function called by tool registry to determine tool visibility."""
     if not _is_authorized_foreground_turn():
         return False
-    # If a runner is alive, also re-verify the slash-access policy so the model
-    # never sees the tool when the user is unauthorized to run /restart.
     try:
         from gateway.run import _gateway_runner_ref
         runner = _gateway_runner_ref()
@@ -134,8 +122,6 @@ def check_fn() -> bool:
             if denial is not None:
                 return False
     except Exception:
-        # If policy lookup fails for any reason, do not silently hide the tool;
-        # the handler performs a second, more authoritative check.
         pass
     return True
 
@@ -195,7 +181,7 @@ def _handle_request_gateway_restart(args: Dict[str, Any]) -> str:
         )
 
     gw_loop = getattr(runner, "_gateway_loop", None)
-    if gw_loop is None or not gw_loop.is_running():
+    if gw_loop is None:
         return json.dumps(
             {
                 "success": False,
@@ -214,10 +200,6 @@ def _handle_request_gateway_restart(args: Dict[str, Any]) -> str:
             ensure_ascii=False,
         )
 
-    # Authoritative re-check of the /restart slash-access policy using the
-    # resolved source. The check_fn already ran but we re-verify inside the
-    # handler so a window-shift (e.g. config reload) between visibility and
-    # invocation can't be exploited.
     denial = _check_restart_policy(runner, source)
     if denial is not None:
         return json.dumps(
@@ -227,40 +209,25 @@ def _handle_request_gateway_restart(args: Dict[str, Any]) -> str:
 
     reason = str(args.get("reason") or "Agent requested restart via natural language").strip()
 
-    # Schedule dispatch_gateway_restart onto the Gateway main event loop
     coro = runner.dispatch_gateway_restart(
         source=source,
         reason=reason,
         origin="agent_tool",
     )
 
-    try:
-        future = safe_schedule_threadsafe(coro, gw_loop)
-    except Exception as exc:
+    future = safe_schedule_threadsafe(coro, gw_loop)
+    if future is None:
         return json.dumps(
             {
                 "success": False,
-                "error": f"Failed to schedule restart request: {exc}",
+                "error": "Failed to schedule restart request onto event loop.",
             },
             ensure_ascii=False,
         )
 
-    # Outer worker timeout: 10.0s (longer than inner 8.0s coordinator timeout).
-    # Per the restart-transaction contract: when the outer worker cannot confirm
-    # the restart outcome within the 10s budget, we MUST return outcome_unknown
-    # — never a "Gateway remains active" / "can_retry=True" — because by then the
-    # transaction may have committed (and the gateway may already be shutting
-    # down) without the worker seeing the result. We do NOT inspect shared
-    # runner state to make a finer-grained judgment; the runner-level
-    # _restart_transaction field can race with other concurrent requests, and
-    # future.cancel() is not authoritative proof of abort.
     try:
         success, message = future.result(timeout=10.0)
     except TimeoutError:
-        # Best-effort: do not block the worker further. The handoff (if any)
-        # continues independently of this worker's return value. We do not
-        # call future.cancel() because that races with the actual coordinator
-        # and may swallow a committed ack.
         return json.dumps(
             {
                 "success": False,
@@ -288,12 +255,7 @@ def _handle_request_gateway_restart(args: Dict[str, Any]) -> str:
     )
 
 
-# Built-in discovery contract (see tools.registry.discover_builtin_tools):
-# This module MUST register itself at module top-level so that
-# ``model_tools.discover_builtin_tools()`` picks the schema up via the
-# AST scan + importlib chain. There is intentionally NO
-# ``def register(registry): ...`` helper for callers to invoke; the
-# registry is populated exactly once when this module is first imported.
+# Top-level registry scan contract
 registry.register(
     toolset="gateway",
     name="request_gateway_restart",

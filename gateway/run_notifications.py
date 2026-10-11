@@ -817,13 +817,7 @@ class GatewayNotificationsMixin:
 
     async def _send_restart_notification(self) -> Optional[tuple[str, str, Optional[str]]]:
         """Notify the chat that initiated /restart that the gateway is back."""
-        try:
-            import gateway.run as _gw_run
-            resolve_delivery_transport = getattr(_gw_run, "resolve_delivery_transport", None)
-            if resolve_delivery_transport is None:
-                from gateway.delivery import resolve_delivery_transport
-        except Exception:
-            from gateway.delivery import resolve_delivery_transport
+        from gateway.delivery import resolve_delivery_transport
         from gateway.run import _hermes_home, _non_conversational_metadata
         notify_path = _hermes_home / ".restart_notify.json"
         if not notify_path.exists():
