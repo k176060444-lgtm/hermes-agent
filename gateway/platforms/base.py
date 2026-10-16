@@ -19,7 +19,6 @@ import uuid
 import weakref
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
-
 import urllib.parse as _urllib_parse
 
 from utils import normalize_proxy_url
@@ -421,7 +420,7 @@ def is_host_excluded_by_no_proxy(hostname: str, no_proxy_value: str | None = Non
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Any, Callable, Awaitable, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Any, Callable, Awaitable, Tuple, Union, Tuple, List, Dict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -2999,60 +2998,6 @@ class BasePlatformAdapter(ABC):
             return
         await self.stop_typing(chat_id)
 
-    async def send_multiple_images(
-        self, chat_id: str, images: list[tuple[str, str]],
-        metadata: Optional[dict[str, Any]] = None, human_delay: float = 0.0) -> SendResult:
-        """Send ``(url, alt)`` images (``http(s)://`` or ``file://``) one by one (GIFs via
-        ``send_animation``, local files via ``send_image_file``); override to bundle natively
-        (Signal). Returns success when at least one image was delivered — the outcome
-        the turn-level delivery tracker records; every override must return the same
-        aggregate, or a media-only turn on that platform reports FAILURE (#106153)."""
-        delivered = False
-        for image_url, alt_text in images:
-            if human_delay > 0:
-                await asyncio.sleep(human_delay)
-            try:
-                logger.info("[%s] Sending image: %s (alt=%s)", self.name,
-                            safe_url_for_log(image_url), alt_text[:30] if alt_text else "")
-                local_path = self._normalize_file_url(image_url)
-                if local_path is not None:
-                    sender, url_kw = self.send_image_file, {"image_path": local_path}
-                elif image_url.startswith("file://"):
-                    from urllib.request import url2pathname
-                    sender, url_kw = self.send_image_file, {"image_path": url2pathname(image_url[7:])}
-                elif self._is_animation_url(image_url):
-                    sender, url_kw = self.send_animation, {"animation_url": image_url}
-                else:
-                    sender, url_kw = self.send_image, {"image_url": image_url}
-                img_result = await sender(
-                    chat_id=chat_id, **url_kw, caption=alt_text or None, metadata=metadata)
-                if not img_result.success:
-                    logger.error("[%s] Failed to send image: %s", self.name, img_result.error)
-                else:
-                    delivered = True
-            except Exception as img_err:
-                logger.error("[%s] Error sending image: %s", self.name, img_err, exc_info=True)
-        if not images:
-            return SendResult(success=False, error="no images to send")
-        return SendResult(
-            success=delivered,
-            error=None if delivered else "all images failed to send")
-
-    async def send_image(
-        self, chat_id: str, image_url: str, caption: Optional[str] = None,
-        reply_to: Optional[str] = None, metadata: Optional[dict[str, Any]] = None) -> SendResult:
-        """Send an image natively; default falls back to sending the URL as text."""
-        text = f"{caption}\n{image_url}" if caption else image_url
-        return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
-
-    async def send_animation(
-        self, chat_id: str, animation_url: str, caption: Optional[str] = None,
-        reply_to: Optional[str] = None, metadata: Optional[dict[str, Any]] = None) -> SendResult:
-        """Send a GIF as a native animation (auto-plays inline); default falls back to
-        send_image."""
-        return await self.send_image(
-            chat_id=chat_id, image_url=animation_url, caption=caption, reply_to=reply_to, metadata=metadata)
-
     @staticmethod
     def _normalize_file_url(url: str) -> Optional[str]:
         """Normalize a file:// URI to a local file path.
@@ -3119,30 +3064,70 @@ class BasePlatformAdapter(ABC):
             logger.debug("Rejecting decoded UNC file:// URI: %s", _log_safe_path(url))
             return None
         return local
+
+    async def send_multiple_images(
+        self, chat_id: str, images: list[tuple[str, str]],
+        metadata: Optional[dict[str, Any]] = None, human_delay: float = 0.0) -> SendResult:
+        """Send ``(url, alt)`` images (``http(s)://`` or ``file://``) one by one (GIFs via
+        ``send_animation``, local files via ``send_image_file``); override to bundle natively
+        (Signal). Returns success when at least one image was delivered — the outcome
+        the turn-level delivery tracker records; every override must return the same
+        aggregate, or a media-only turn on that platform reports FAILURE (#106153)."""
+        delivered = False
+        for image_url, alt_text in images:
+            if human_delay > 0:
+                await asyncio.sleep(human_delay)
+            try:
+                logger.info("[%s] Sending image: %s (alt=%s)", self.name,
+                            safe_url_for_log(image_url), alt_text[:30] if alt_text else "")
+                local_path = self._normalize_file_url(image_url)
+                if local_path is not None:
+                    sender, url_kw = self.send_image_file, {"image_path": local_path}
+                elif image_url.startswith("file://"):
+                    from urllib.request import url2pathname
+                    sender, url_kw = self.send_image_file, {"image_path": url2pathname(image_url[7:])}
+                elif self._is_animation_url(image_url):
+                    sender, url_kw = self.send_animation, {"animation_url": image_url}
+                else:
+                    sender, url_kw = self.send_image, {"image_url": image_url}
+                img_result = await sender(
+                    chat_id=chat_id, **url_kw, caption=alt_text or None, metadata=metadata)
+                if not img_result.success:
+                    logger.error("[%s] Failed to send image: %s", self.name, img_result.error)
+                else:
+                    delivered = True
+            except Exception as img_err:
+                logger.error("[%s] Error sending image: %s", self.name, img_err, exc_info=True)
+        if not images:
+            return SendResult(success=False, error="no images to send")
+        return SendResult(
+            success=delivered,
+            error=None if delivered else "all images failed to send")
+
+    async def send_image(
+        self, chat_id: str, image_url: str, caption: Optional[str] = None,
+        reply_to: Optional[str] = None, metadata: Optional[dict[str, Any]] = None) -> SendResult:
+        """Send an image natively; default falls back to sending the URL as text."""
+        text = f"{caption}\n{image_url}" if caption else image_url
+        return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
+
+    async def send_animation(
+        self, chat_id: str, animation_url: str, caption: Optional[str] = None,
+        reply_to: Optional[str] = None, metadata: Optional[dict[str, Any]] = None) -> SendResult:
+        """Send a GIF as a native animation (auto-plays inline); default falls back to
+        send_image."""
+        return await self.send_image(
+            chat_id=chat_id, image_url=animation_url, caption=caption, reply_to=reply_to, metadata=metadata)
+
     @staticmethod
     def _is_animation_url(url: str) -> bool:
         """Check if a URL points to an animated GIF (vs a static image)."""
         return url.lower().split('?')[0].endswith('.gif')
 
     @staticmethod
-    def extract_images(content: str) -> tuple[list[tuple[str, str]], str]:
-        """Extract ``![alt](url)`` and ``<img src=...>`` image URLs from a response;
-        returns ``([(url, alt_text), ...], content with those tags removed)``."""
-        md_pattern = r'!\[([^\]]*)\]\((https?://[^\s\)]+)\)'
-        # <img src="url"> / <img src="url"></img> / <img src="url"/>
-        html_pattern = r'<img\s+src=["\']?(https?://[^\s"\'<>]+)["\']?\s*/?>\s*(?:</img>)?'
-        # Only extract URLs that look like actual images.
-        markers = ('.png', '.jpg', '.jpeg', '.gif', '.webp', 'fal.media', 'fal-cdn',
-                   'replicate.delivery')
-        images = [(m.group(2), m.group(1)) for m in re.finditer(md_pattern, content)
-                  if any(m.group(2).lower().endswith(ext) or ext in m.group(2).lower()
-                         for ext in markers)]
-        images.extend((match.group(1), "") for match in re.finditer(html_pattern, content))
-        if not images:
-            return images, content
-        # Remove only the tags we extracted, not every markdown image.
-        extracted_urls = {url for url, _ in images}
-
+    def extract_images(content: str) -> Tuple[List[Tuple[str, str]], str]:
+        """
+        Extract image URLs from markdown and HTML image tags in a response.
 
         Finds patterns like:
         - ![alt text](https://example.com/image.png)
@@ -3271,7 +3256,7 @@ class BasePlatformAdapter(ABC):
 
     async def send_voice(
         self, chat_id: str, audio_path: str, caption: Optional[str] = None,
-        reply_to: Optional[str] = None, metadata: Optional[dict[str, Any]] = None, **kwargs) -> SendResult:
+        reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs) -> SendResult:
         """Send audio as a native voice message (Telegram bubble / Discord attachment).
         Default: friendly failure notice."""
         return await self._send_media_fallback_notice(
@@ -3279,7 +3264,7 @@ class BasePlatformAdapter(ABC):
 
     async def _send_media_fallback_notice(
         self, method: str, kind: str, path: str, chat_id: str, caption: Optional[str],
-        reply_to: Optional[str], metadata: Optional[dict[str, Any]], *, file_name: Optional[str] = None,
+        reply_to: Optional[str], metadata: Optional[Dict[str, Any]], *, file_name: Optional[str] = None,
     ) -> SendResult:
         """Shared default for send_voice/send_video/send_document/send_image_file. The local path is
         logged but NEVER echoed into chat (host layout leak); only the caller's ``file_name`` is
@@ -3320,7 +3305,6 @@ class BasePlatformAdapter(ABC):
         if caption:
             await self.send(chat_id, caption, reply_to=reply_to, metadata=metadata)
         return SendResult(success=False, error=notice)
-
     def warning_text(self, visible: str, hidden: Optional[str] = "", *, logical_platform=None, chat_id=None, metadata=None) -> Optional[str]:
         """Project mixed content: the diagnostic variant when visible, else the requested remainder.
 
@@ -3479,6 +3463,7 @@ class BasePlatformAdapter(ABC):
             spans.append((start, m.end()))
         spans.extend(m.span() for m in re.finditer(r'^>.*$', content, re.MULTILINE))
         return _blank_spans(content, spans)
+
     @staticmethod
     def _mask_json_string_media(content: str) -> str:
         """Blank ``MEDIA:<bare-path>`` tags inside JSON string *values* (stored tool-result text
@@ -3491,13 +3476,15 @@ class BasePlatformAdapter(ABC):
         ``MEDIA_TAG_CLEANUP_RE`` would still match it and re-deliver a stale file. (Regression report
         #34375.)
         """
-        if '"' not in content or ("media:" not in content.lower() and "file://" not in content.lower()):
+        if '"' not in content or "MEDIA:" not in content:
             return content
-        # Value-context string: quote preceded by : , { or [; escape-aware body to the closing quote.
+        # Value-context string: quote preceded by : , { or [; escape-aware body to the closing
+        # quote.
         spans = [
             m.span(1) for m in re.finditer(r'(?<=[:,{\[])\s*"((?:[^"\\\n]|\\.)*)"', content)
-            if re.search(r'(?:MEDIA:\s*(?:~/|/|[A-Za-z]:[/\\])|file://)', m.group(1), re.IGNORECASE)]
+            if re.search(r'MEDIA:\s*(?:~/|/|[A-Za-z]:[/\\])', m.group(1))]
         return _blank_spans(content, spans)
+
     @staticmethod
     def extract_media(content: str) -> tuple[list[tuple[str, bool]], str]:
         """Extract ``MEDIA:<path>`` tags and strip ``[[audio_as_voice]]`` / ``[[as_document]]`` ->
@@ -3552,7 +3539,7 @@ class BasePlatformAdapter(ABC):
     # philosophy applied to the dispatch site): bare prose paths are NEVER auto-attached here —
     # a path mentioned in prose stays text. Tags inside code spans are left untouched (docs).
     _MEDIA_TAG_ANY_PATH_RE = re.compile(
-        r'MEDIA:\s*(?P<q>["\']?)((?:[A-Za-z]:[/\\]|/|~/)[^\s"\']+)(?P=q)', re.IGNORECASE)
+        r'MEDIA:\s*(?P<q>["\']?)((?:[A-Za-z]:[/\\\\]|/|~/)[^\s"\']+)(?P=q)', re.IGNORECASE)
 
     @classmethod
     def _extract_media_tag_local_files(cls, content: str) -> Tuple[List[str], str]:
@@ -3576,6 +3563,7 @@ class BasePlatformAdapter(ABC):
 
         cleaned = cls._MEDIA_TAG_ANY_PATH_RE.sub(_sub, content)
         return list(found), re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
 
     @staticmethod
     def extract_local_files(content: str) -> tuple[list[str], str]:
@@ -4688,9 +4676,9 @@ class BasePlatformAdapter(ABC):
     async def _extract_response_content(self, response: str, event: MessageEvent, session_key: str,
                                         *, is_ephemeral_response: bool) -> _ExtractedResponse:
         """Split a handler response into deliverable text + attachments. Order matters: MEDIA tags →
-        image URLs → residual directives → explicit MEDIA:-tag local paths only (local patch
-        2026-09-25: bare prose paths are never auto-attached and stay text). History dedup is
-        off-loop, fail-open. An emptied non-empty response is recovered."""
+        image URLs → residual directives → bare local paths (skipped for ephemeral notices so config
+        paths stay text; unknown-extension MEDIA tags survive for the bare-path detector). History
+        dedup is bare-path only, off-loop, fail-open. An emptied non-empty response is recovered."""
         # Captured before extract_media strips it: images then go via send_document (no recompression).
         force_document = "[[as_document]]" in response
         pre_extract = response

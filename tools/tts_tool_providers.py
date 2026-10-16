@@ -488,13 +488,8 @@ def _read_gemini_persona_prompt(gemini_config: dict[str, Any]) -> str:
         return ""
 
 
-<<<<<<< HEAD
-def _gemini_audio_tags_enabled(gemini_config: Dict[str, Any], model: str) -> bool:
-    """Square-bracket rewrite is opt-in and only for Gemini 3.1 TTS."""
-=======
 def _gemini_audio_tags_enabled(gemini_config: dict[str, Any], model: str) -> bool:
     """Audio tags are opt-in and only Gemini 3.1 TTS models are known to honor them."""
->>>>>>> v0.22.2
     raw = gemini_config.get("audio_tags")
     if isinstance(raw, dict):
         raw = raw.get("enabled")
@@ -654,7 +649,6 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
             f"({request_len} > {max_len} chars). Reduce the persona/audio-tag "
             "prompt or lower tts.gemini.max_text_length so long-form text is "
             "split with enough prompt headroom.")
-<<<<<<< HEAD
     proxy_url = str(
         gemini_config.get("proxy") or gemini_config.get("proxy_url") or get_env_value("GEMINI_PROXY_URL") or ""
     ).strip()
@@ -688,10 +682,10 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
             headers["x-goog-api-key"] = api_key
-        text_input: Dict[str, Any] = {"type": "text", "text": prompt_text}
+        text_input: dict[str, Any] = {"type": "text", "text": prompt_text}
         if is_38 and style:
             text_input["annotations"] = [{"type": "speech_metadata", "style": style}]
-        interactions_payload: Dict[str, Any] = {
+        interactions_payload: dict[str, Any] = {
             "model": model,
             "input": [text_input],
         }
@@ -701,8 +695,7 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
                     "speakers": [{"voice": voice}]
                 }
             }
-        params = {"key": api_key} if is_google_official else {}
-        resp = _post_json(url, interactions_payload, headers, params=params, **extra_post_kwargs)
+        resp = _post_json(url, interactions_payload, headers, **extra_post_kwargs)
         if resp.status_code == 200:
             response = resp
         elif protocol in ("interactions",):
@@ -715,10 +708,10 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
             response = resp
 
     if not use_interactions:
-        part: Dict[str, Any] = {"text": prompt_text}
+        part: dict[str, Any] = {"text": prompt_text}
         if is_38:
             part["speech_metadata"] = {"style": style}
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [part]}] if is_38 else [{"parts": [part]}],
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
@@ -726,34 +719,15 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
                                  {"prebuiltVoiceConfig": {"voiceName": voice}}},
             },
         }
+        headers["x-goog-api-key"] = api_key
         response = _post_json(
-            f"{base_url}/models/{model}:generateContent", payload, headers, params={"key": api_key}, **extra_post_kwargs
+            f"{base_url}/models/{model}:generateContent", payload, headers, **extra_post_kwargs
         )
 
     if response is None or response.status_code != 200:
         err = _gemini_error_detail(response) if response is not None else "No response"
         code = response.status_code if response is not None else 500
         raise RuntimeError(f"Gemini TTS API error (HTTP {code}): {err}")
-=======
-    payload: dict[str, Any] = {
-        "contents": [{"parts": [{"text": prompt_text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
-        },
-    }
-    # HTTP errors include request URLs, so credentials must stay in headers.
-    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-    if urlparse(base_url).hostname == "generativelanguage.googleapis.com":
-        try:
-            from hermes_cli.version_info import get_version_info
-            headers["X-Goog-Api-Client"] = f"hermes-agent/{get_version_info().base_version}"
-        except Exception:
-            headers["X-Goog-Api-Client"] = "hermes-agent/0.0.0"
-    response = _post_json(f"{base_url}/models/{model}:generateContent", payload, headers)
-    if response.status_code != 200:
-        raise RuntimeError(f"Gemini TTS API error (HTTP {response.status_code}): {_gemini_error_detail(response)}")
->>>>>>> v0.22.2
     try:
         data = _read_tts_response_json(response, label="Gemini TTS")
         audio_b64 = ""

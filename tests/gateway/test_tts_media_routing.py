@@ -12,13 +12,9 @@ import sys
 import types
 import os
 from types import SimpleNamespace
-<<<<<<< HEAD
 from unittest.mock import AsyncMock, MagicMock
-import urllib.parse
-=======
-from unittest.mock import AsyncMock
 from urllib.parse import quote, unquote
->>>>>>> v0.22.2
+import urllib.parse
 
 import pytest
 

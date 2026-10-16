@@ -169,3 +169,8 @@ def make_restart_runner(
     platform_adapter.set_busy_session_handler(runner._handle_active_session_busy_message)
     runner.adapters = {Platform.TELEGRAM: platform_adapter}
     return runner, platform_adapter
+
+
+def attach_real_stop(runner: GatewayRunner) -> None:
+    """Re-bind ``runner.stop`` to the real production stop() method."""
+    runner.stop = GatewayRunner.stop.__get__(runner, GatewayRunner)  # type: ignore[method-assign]

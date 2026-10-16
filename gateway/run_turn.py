@@ -2523,18 +2523,6 @@ class GatewayTurnMixin:
                 )
                 if send_res and not send_res.success:
                     logger.error("[%s] Background task %s fallback delivery failed: %s", adapter.name, task_id, send_res.error)
-                )
-                if send_res and not send_res.success:
-                    logger.error("[%s] Background task %s result delivery failed: %s", adapter.name, task_id, send_res.error)
-            elif not images and not media_files:
-                send_res = await adapter.send(
-                    chat_id=source.chat_id,
-                    content=header + "(No response generated)",
-                    reply_to=event_message_id,
-                    metadata=_thread_metadata,
-                )
-                if send_res and not send_res.success:
-                    logger.error("[%s] Background task %s fallback delivery failed: %s", adapter.name, task_id, send_res.error)
             # Send extracted images via send_multiple_images so that
             # file:// URIs reach send_image_file (decoded) instead of send_image.
             # Build canonical dedup keys from file:// images so the media_files loop
