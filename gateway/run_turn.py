@@ -2502,11 +2502,23 @@ class GatewayTurnMixin:
                 media_files = BasePlatformAdapter.filter_media_delivery_paths(media_files)
                 images, text_content = adapter.extract_images(response)
             if text_content:
-                await adapter.send(chat_id=source.chat_id, content=header + text_content, metadata=_thread_metadata)
-            elif not images and not media_files:
-                await adapter.send(
-                    chat_id=source.chat_id, content=header + "(No response generated)", metadata=_thread_metadata,
+                send_res = await adapter.send(
+                    chat_id=source.chat_id,
+                    content=header + text_content,
+                    reply_to=event_message_id,
+                    metadata=_thread_metadata,
                 )
+                if send_res and not send_res.success:
+                    logger.error("[%s] Background task %s result delivery failed: %s", adapter.name, task_id, send_res.error)
+            elif not images and not media_files:
+                send_res = await adapter.send(
+                    chat_id=source.chat_id,
+                    content=header + "(No response generated)",
+                    reply_to=event_message_id,
+                    metadata=_thread_metadata,
+                )
+                if send_res and not send_res.success:
+                    logger.error("[%s] Background task %s fallback delivery failed: %s", adapter.name, task_id, send_res.error)
             # Send extracted images via send_multiple_images so that
             # file:// URIs reach send_image_file (decoded) instead of send_image.
             # Build canonical dedup keys from file:// images so the media_files loop
@@ -2537,7 +2549,7 @@ class GatewayTurnMixin:
                     if _should_send_media_as_audio(source.platform, _ext, _is_voice):
                         await adapter.send_voice(
                             chat_id=source.chat_id, audio_path=media_path, metadata=_thread_metadata,
-                            is_voice=_is_voice,
+                            is_voice=_is_voice, reply_to=event_message_id,
                         )
                     else:
                         sender, key = (
@@ -2545,7 +2557,10 @@ class GatewayTurnMixin:
                             else (adapter.send_image_file, "image_path") if _ext in _IMAGE_EXTS
                             else (adapter.send_document, "file_path")
                         )
-                        await sender(chat_id=source.chat_id, metadata=_thread_metadata, **{key: media_path})
+                        await sender(
+                            chat_id=source.chat_id, metadata=_thread_metadata,
+                            reply_to=event_message_id, **{key: media_path},
+                        )
 
         except Exception as e:
             logger.exception("Background task %s failed", task_id)
