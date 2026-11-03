@@ -1,0 +1,3 @@
+GitHub write permission test
+Branch: chatgpt-write-test-20261103
+This file verifies write access without modifying main.
