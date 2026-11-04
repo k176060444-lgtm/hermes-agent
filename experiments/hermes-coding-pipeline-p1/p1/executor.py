@@ -46,7 +46,11 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
     # Never call a paid model and then treat its self-reported JSON as evidence.
     if not TRUSTED_INTEGRATION_EXECUTION_VERIFIED:
         raise InvocationError("integration execution disabled: trusted Harness provenance and test attestation are NOT_VERIFIED")
-    adapters=read_json(Path(task["adapter_config"]))
+    adapter_file=task_root/"snapshots"/"adapters.json"
+    if (not task.get("adapter_sha256") or not adapter_file.is_file() or
+            digest_file(adapter_file)!=task["adapter_sha256"]):
+        raise InvocationError("frozen adapter snapshot missing or mismatched")
+    adapters=read_json(adapter_file)
     profile=adapters.get("harnesses",{}).get(assignment["harness"])
     if not isinstance(profile,dict) or not profile.get("argv"):
         raise InvocationError(f"no configured command adapter for {assignment['harness']}")

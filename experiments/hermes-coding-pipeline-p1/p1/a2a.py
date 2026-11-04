@@ -8,7 +8,12 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from .contracts import ContractError, read_json
+from .contracts import ContractError, read_json, digest_file
+
+
+# A code-owned independent approval gate; no self-supplied adapter JSON can
+# bypass it. Real P0 identity attestation and transport receipts are still pending.
+TRUSTED_A2A_ADAPTER_VERIFIED = False
 
 
 def call_adapter(task: dict, task_root: Path, operation: str, request: dict) -> dict:
@@ -21,7 +26,13 @@ def call_adapter(task: dict, task_root: Path, operation: str, request: dict) -> 
         if operation=="collect":
             return fixture
         raise ContractError(f"unsupported a2a operation {operation}")
-    cfg=read_json(Path(task["adapter_config"]))
+    if not TRUSTED_A2A_ADAPTER_VERIFIED:
+        raise ContractError("real A2A adapter verification NOT_VERIFIED: integration disabled")
+    adapter_file=task_root/"snapshots"/"adapters.json"
+    if (not task.get("adapter_sha256") or not adapter_file.is_file() or
+            digest_file(adapter_file)!=task["adapter_sha256"]):
+        raise ContractError("frozen A2A adapter snapshot missing or mismatched")
+    cfg=read_json(adapter_file)
     adapter=cfg.get("a2a",{})
     argv=adapter.get("argv")
     if not isinstance(argv,list) or not argv or not Path(argv[0]).is_absolute() or not adapter.get("explicitly_authorized",False):
@@ -52,6 +63,10 @@ def validate_collection(task: dict, matrix: dict, collection: dict, task_root:Pa
         if task["mode"]=="integration" or field in collection:
             if collection.get(field)!=task.get(field):
                 errors.append(f"A2A {field} does not match approved task")
+    expected_roles={r:matrix["roles"][r] for r in ("blind_a","blind_b","blind_c")}
+    if task["mode"]=="integration" or "blind_roles" in collection:
+        if collection.get("blind_roles")!=expected_roles:
+            errors.append("A2A blind_roles not bound to approved assignment")
     reports=collection.get("reports",[])
     if not isinstance(reports,list):return ["A2A reports must be array"]
     approved={matrix["roles"][key]["node"] for key in ("blind_a","blind_b","blind_c")}
@@ -67,7 +82,7 @@ def validate_collection(task: dict, matrix: dict, collection: dict, task_root:Pa
             errors.append("duplicate/empty A2A physical host id");continue
         if report.get("commit_sha")!=task["commit_sha"]:
             errors.append("A2A report based on wrong commit");continue
-        if not report.get("report") or report.get("verdict") not in (
+        if not isinstance(report.get("report"),str) or not report["report"].strip() or report.get("verdict") not in (
                 "APPROVE", "APPROVE_WITH_COMMENTS", "REQUEST_CHANGES", "QUESTION", "NEEDS_SPECIALIST"):
             errors.append("A2A report missing/invalid verdict/content");continue
         if task["mode"]=="integration":

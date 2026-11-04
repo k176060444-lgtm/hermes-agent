@@ -403,8 +403,11 @@ def test_p025_timeout_keeps_partial_stdout_stderr(scenario,monkeypatch):
     adapter=s["root"]/"adapters-timeout.json"
     adapter.write_text(canonical({"harnesses":{"codex":{"argv":[sys.executable,"-c","print(42)"],
                                                         "explicitly_authorized":True,"timeout_seconds":1}}})+"\n")
-    task={"mode":"integration","adapter_config":str(adapter),"task_id":"TEST-001",
-          "project_root":str(s["project"]),"worktree_path":str(s["project"])}
+    from p1.contracts import atomic_write
+    frozen=s["home"] / "snapshots" / "adapters.json"
+    atomic_write(frozen,adapter.read_bytes())
+    task={"mode":"integration","adapter_config":str(frozen),"adapter_sha256":digest_file(frozen),
+          "task_id":"TEST-001","project_root":str(s["project"]),"worktree_path":str(s["project"])}
     def timeout(*args,**kwargs):
         raise subprocess.TimeoutExpired(args[0],1,output=b"PARTIAL-STDOUT",stderr=b"PARTIAL-STDERR")
     monkeypatch.setattr(ex.subprocess,"run",timeout)

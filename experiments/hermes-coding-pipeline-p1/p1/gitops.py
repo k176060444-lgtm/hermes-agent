@@ -19,7 +19,63 @@ def head(repo: Path) -> str:
 
 
 def clean(repo: Path) -> bool:
-    return not git(repo,"status","--porcelain","--untracked-files=normal")
+    """Require clean status plus checked-out content matching the index.
+
+    `git status` can skip tracked paths marked assume-unchanged or
+    skip-worktree. Neither bit is acceptable for a frozen audit baseline.
+    """
+    return (not git(repo,"status","--porcelain","--untracked-files=normal")
+            and not hidden_index_flags(repo)
+            and not tracked_worktree_mismatch(repo))
+
+
+def hidden_index_flags(repo: Path) -> list[str]:
+    result=subprocess.run(["git","-C",str(repo),"ls-files","-v","-z"],
+                          capture_output=True,timeout=60)
+    if result.returncode:
+        raise ContractError("unable to inspect Git index flags")
+    flags=[]
+    for entry in result.stdout.split(b"\0"):
+        if entry and entry[:2]!=b"H ":
+            flags.append(os.fsdecode(entry[2:]))
+    return flags
+
+
+def tracked_worktree_mismatch(repo: Path) -> list[str]:
+    """Compare every tracked worktree blob with the staged Git blob.
+
+    Git's `hash-object --path` applies repository clean filters (including
+    CRLF normalization), so legitimate checked-out file representations do
+    not yield false positives. Symlink targets are hashed as link contents.
+    This intentionally favors correctness over speed in audit-sized repos.
+    """
+    result=subprocess.run(["git","-C",str(repo),"ls-files","--stage","-z"],
+                          capture_output=True,timeout=60)
+    if result.returncode:
+        raise ContractError("cannot enumerate index blobs")
+    mismatches=[]
+    for record in result.stdout.split(b"\0"):
+        if not record:continue
+        meta,raw_path=record.split(b"\t",1)
+        mode,blob,stage=meta.split()
+        rel=os.fsdecode(raw_path)
+        if stage!=b"0":
+            mismatches.append(rel);continue
+        file=repo/rel
+        try:
+            if file.is_symlink():
+                raw=os.fsencode(os.readlink(file))
+            elif file.is_file():
+                raw=file.read_bytes()
+            else:
+                mismatches.append(rel);continue
+        except OSError:
+            mismatches.append(rel);continue
+        checked=subprocess.run(["git","-C",str(repo),"hash-object","--stdin","--path",rel],
+                               input=raw,capture_output=True,timeout=60)
+        if checked.returncode or checked.stdout.strip()!=blob:
+            mismatches.append(rel)
+    return mismatches
 
 
 def index_digest(repo: Path) -> str:
@@ -27,7 +83,11 @@ def index_digest(repo: Path) -> str:
     result=subprocess.run(["git","-C",str(repo),"ls-files","--stage","-z"],capture_output=True,timeout=60)
     if result.returncode:
         raise ContractError("cannot inspect Git index")
-    return sha256(result.stdout)
+    flags=subprocess.run(["git","-C",str(repo),"ls-files","-v","-z"],
+                         capture_output=True,timeout=60)
+    if flags.returncode:
+        raise ContractError("cannot inspect Git index flags")
+    return sha256(result.stdout+b"\0FLAGS\0"+flags.stdout)
 
 
 def git_status(repo: Path) -> str:
@@ -42,8 +102,11 @@ def test_commit_transition(repo: Path, previous: str, current: str) -> tuple[boo
                             capture_output=True,timeout=60)
     if ancestor.returncode:
         return False, []
-    delta=git(repo,"diff","--name-only",previous,current).splitlines()
-    return all(test_path(p) for p in delta), delta
+    delta=git(repo,"diff","--name-status","--no-renames",previous,current).splitlines()
+    changes=[entry.split("\t",1) for entry in delta]
+    # Tester may add new test files, but must not rewrite, delete or rename
+    # baseline or protected test cases, even if the output remains green.
+    return all(len(item)==2 and item[0]=="A" and test_path(item[1]) for item in changes), delta
 
 
 def inventory(root: Path) -> dict[str,str]:

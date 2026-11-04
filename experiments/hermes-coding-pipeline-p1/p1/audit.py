@@ -44,6 +44,11 @@ def audit_role(task:dict, role:str, stage:str, envelope:dict, before:dict[str,st
         for p in sorted(changed(before,after)):
             if not test_path(p):
                 errors.append(f"test-only role touched non-test path: {p}")
+            elif p in before:
+                errors.append(f"Tester changed/deleted existing test: {p}")
+        for file, expected_sha in task.get("protected_tests",{}).items():
+            if after.get(file)!=expected_sha:
+                errors.append(f"Tester changed/deleted protected exam: {file}")
         if before_head!=after_head and before_head:
             warnings.append("Tester changed HEAD; ancestry and commit-diff check required at workflow gate")
     if role!="planner" and not isinstance(payload.get("report"),str):

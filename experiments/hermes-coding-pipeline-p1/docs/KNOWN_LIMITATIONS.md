@@ -25,3 +25,7 @@
 - **LOW:** style, comments, optional refactoring. Avoid marking as blocking.
 
 15. **Audit Round-001 was FAIL.** See `ROUND_001_REMEDIATION.md` for the 29 finding dispositions; the candidate needs independent Round-002 review. All real-execution and privileged local-state attacker guarantees remain unverified.
+
+### Round-002 candidate remediations (independent Round-003 audit pending)
+
+See `ROUND_002_REMEDIATION.md`. Gate0.1 now requires a `souls_sha256` fingerprint in the approval object. No-op remediation requires structured `no_op=true` and a nonblank `no_op_reason` rather than matching English/Chinese substrings. Developer tests are offline fixtures only; they do not establish actual Harness, test receipt, A2A identity or Windows E: readiness. Live subprocess output is not yet size-bounded (R2-008), and a fully privileged actor capable of rewriting an entire local event chain still requires a separate trust anchor.

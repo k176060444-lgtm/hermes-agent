@@ -5,5 +5,6 @@
   "approved_at": "",
   "approval_id": "",
   "intent_sha256": "<SHA256 of approved intent.md>",
-  "matrix_sha256": "<SHA256 of approved matrix.json>"
+  "matrix_sha256": "<SHA256 of approved matrix.json>",
+  "souls_sha256": "<SHA256 of canonical per-role Soul hash manifest + newline>"
 }

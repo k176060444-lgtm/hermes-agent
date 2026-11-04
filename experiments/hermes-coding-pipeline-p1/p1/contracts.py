@@ -103,13 +103,16 @@ def validate_matrix(matrix: dict[str, Any]) -> None:
         raise ContractError("blind roles must use three distinct nodes")
 
 
-def validate_approval(approval: dict[str, Any], intent_sha: str, matrix_sha: str) -> None:
+def validate_approval(approval: dict[str, Any], intent_sha: str, matrix_sha: str,
+                      souls_sha: str) -> None:
     if approval.get("gate") != "0.1" or approval.get("approved") is not True:
         raise ContractError("Gate 0.1 approval missing")
     if not approval.get("approval_id") or not approval.get("approved_by") or not approval.get("approved_at"):
         raise ContractError("Gate 0.1 approval lacks provenance")
-    if approval.get("intent_sha256") != intent_sha or approval.get("matrix_sha256") != matrix_sha:
-        raise ContractError("Gate 0.1 approval input SHA mismatch")
+    if (approval.get("intent_sha256") != intent_sha or
+        approval.get("matrix_sha256") != matrix_sha or
+        approval.get("souls_sha256") != souls_sha):
+        raise ContractError("Gate 0.1 approval input/Soul SHA mismatch")
 
 
 def snapshot_inputs(root: Path, intent: Path, matrix: Path, approval: Path, souls_dir: Path) -> dict[str, str]:
@@ -131,7 +134,6 @@ def snapshot_inputs(root: Path, intent: Path, matrix: Path, approval: Path, soul
         raise ContractError("matrix and approval must be JSON objects")
     validate_matrix(mat)
     isha, msha = sha256(intent_bytes), sha256(matrix_bytes)
-    validate_approval(approve, isha, msha)
     soul_bytes: dict[str, bytes] = {}
     for role in ROLE_NAMES:
         source = souls_dir / f"{role}.md"
@@ -145,6 +147,8 @@ def snapshot_inputs(root: Path, intent: Path, matrix: Path, approval: Path, soul
             raise ContractError(f"invalid or empty Soul contract: {role}")
         soul_bytes[role] = raw
     hashes = {role: sha256(raw) for role, raw in soul_bytes.items()}
+    souls_sha = sha256((canonical(hashes)+"\n").encode("utf-8"))
+    validate_approval(approve, isha, msha, souls_sha)
     root.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".pending-snapshots-", dir=root))
     try:

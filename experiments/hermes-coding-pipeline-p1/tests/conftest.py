@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 import pytest
-from p1.contracts import digest_file, sha256, canonical
+from p1.contracts import digest_file, sha256, canonical, ROLE_NAMES
 from p1.workflow import initialize
 
 
@@ -37,7 +37,10 @@ def scenario(tmp_path):
         "roles":{key:{"node":("5bao" if key=="blind_a" else "9bao" if key=="blind_b" else "rusty" if key=="blind_c" else "21bao"),"harness":harness,"primary_model":"fixture-only-model" if not key.startswith("blind_") else None,"backup_model":None,"permission":permission} for key,(harness,permission) in roles.items()},
         "blind_review":{"minimum_distinct_physical_nodes":2,"third_seat_grace_seconds":600,"candidates":["5bao","9bao","rusty"]}}
     matrix_file=inputs/"matrix.json";matrix_file.write_text(canonical(matrix)+"\n")
-    approval={"gate":"0.1","approved":True,"approved_by":"user","approved_at":"2026-11-04T00:00:00+08:00","approval_id":"offline-approval-001","intent_sha256":digest_file(intent),"matrix_sha256":digest_file(matrix_file)}
+    soul_dir=Path(__file__).resolve().parents[1]/"souls"
+    approved_souls={role:digest_file(soul_dir/f"{role}.md") for role in ROLE_NAMES}
+    soul_sha=sha256((canonical(approved_souls)+"\n").encode())
+    approval={"gate":"0.1","approved":True,"approved_by":"user","approved_at":"2026-11-04T00:00:00+08:00","approval_id":"offline-approval-001","intent_sha256":digest_file(intent),"matrix_sha256":digest_file(matrix_file),"souls_sha256":soul_sha}
     gate01=inputs/"gate01.json";gate01.write_text(canonical(approval)+"\n")
     fixtures=tmp_path/"fixtures";fixtures.mkdir()
     spec="# TASK_SPEC\n\n- Build a fixture-only module.\n"
@@ -48,7 +51,8 @@ def scenario(tmp_path):
       "3-spec_reviewer.json":{"verdict":"APPROVE","report":"Scope reviewed: main.py\nAPPROVE (SIMULATED).","reviewed_commit":commit,"spec_sha256":specsha},
       "4-quality_reviewer.json":{"verdict":"APPROVE_WITH_COMMENTS","report":"Scope reviewed: main.py\nNo BLOCKER (SIMULATED).","reviewed_commit":commit,"spec_sha256":specsha},
       "4_5-tester_gate_a.json":{"verdict":"GATE_A_PASS","report":"GATE_A_PASS (SIMULATED)."},
-      "5_1-worker_remediation.json":{"verdict":"PASS","report":"No P0/P1 to remediate (SIMULATED)."},
+      "5_1-worker_remediation.json":{"verdict":"PASS","report":"No P0/P1 to remediate (SIMULATED).",
+                                      "no_op":True,"no_op_reason":"All reported issues were already resolved in the reviewed revision."},
       "5_2-tester_gate_b.json":{"verdict":"GATE_B_PASS","checks":{"smoke":"PASS","canary":"PASS","regression":"PASS"},"report":"GATE_B_PASS (SIMULATED)."},
       "5_3-arbitrator.json":{"verdict":"PASS","report":"ARBITRATION REPORT (SIMULATED)\nPASS","reviewed_commit":commit}
     }

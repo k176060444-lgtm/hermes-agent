@@ -89,3 +89,7 @@ External audit agents must review **the exact P1 Git commit**, then upload repor
 ## Important unverified / unfinished edges
 
 See [`docs/ROUND_001_REMEDIATION.md`](docs/ROUND_001_REMEDIATION.md) for the complete 29-finding disposition and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) for remaining blockers. Key blockers before real execution: trust of external job reports/physical identity; verified Codex/OpenCode wrapper outputs and role permissions on 21bao; real Magpie provenance; live-safe side-effect Kill guard; independent human-approval provenance; managed Git evidence commits and recovery after ambiguous external invocations. Passing mocks does not waive these blockers.
+
+### Round-002 FAIL remediation candidate
+
+The latest changes respond to Round-002 audit report `541c25a` (which audited `7ef210a`). See `docs/ROUND_002_REMEDIATION.md` and `prompts/ROUND003_AUDIT_PROMPT.md` for the exact verification boundary. Approval file now must bind all 12 Role Soul hashes (`souls_sha256`). Real integration remains **NOT_VERIFIED and disabled**; successful offline fixtures cannot authorize 21bao live calls or production release.

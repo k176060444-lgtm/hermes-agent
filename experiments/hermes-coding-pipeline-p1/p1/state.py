@@ -96,18 +96,56 @@ class Store:
                     errors.append("task row does not match the last journal state hash")
             except (KeyError, ValueError, TypeError, IndexError) as exc:
                 errors.append(f"task state journal integrity error: {exc}")
+        # Bind run metadata to the journal, not just the mutable runs table.
+        # Incomplete dispatched runs are deliberately left for reconciliation.
+        dispatched={}
+        finished={}
+        for event in rows:
+            try:
+                data=json.loads(event["payload"])
+                if event["kind"]=="execution_dispatched":
+                    dispatched[int(data["run_id"])]=data
+                elif event["kind"]=="execution_finished":
+                    finished[int(data["run_id"])]=data
+            except (ValueError,TypeError,KeyError) as exc:
+                errors.append(f"run event malformed {event['id']}: {exc}")
+        runs=self.db.execute("SELECT * FROM runs WHERE task_id=?", (task_id,)).fetchall()
+        for run in runs:
+            run_id=run["id"]
+            if run_id not in dispatched:
+                errors.append(f"run {run_id}: dispatch event missing")
+                continue
+            if dispatched[run_id].get("input_sha")!=run["input_sha"]:
+                errors.append(f"run {run_id}: input SHA differs from dispatch journal")
+            if run["status"]=="COMPLETED":
+                record=finished.get(run_id)
+                if not record:
+                    errors.append(f"run {run_id}: finish event missing")
+                else:
+                    details_sha=hashlib.sha256(run["details"].encode("utf-8")).hexdigest()
+                    if (record.get("details_sha256")!=details_sha or
+                        record.get("output_sha")!=run["output_sha"] or
+                        record.get("status")!=run["status"]):
+                        errors.append(f"run {run_id}: run details or output differs from journal")
+            elif run_id in finished:
+                errors.append(f"run {run_id}: terminal journal for unfinished run")
         return errors
 
     def start_run(self, task_id: str, stage: str, role: str, input_sha: str, details: dict) -> int:
         with self.db:
             cur=self.db.execute("INSERT INTO runs(task_id,stage,role,status,created_at,input_sha,details) VALUES (?,?,?,?,?,?,?)",(task_id,stage,role,"RUNNING",time.time(),input_sha,canonical(details)))
-            self._event(task_id,"execution_dispatched",{"stage":stage,"role":role,"run_id":cur.lastrowid})
+            self._event(task_id,"execution_dispatched",{"stage":stage,"role":role,"run_id":cur.lastrowid,
+                     "input_sha":input_sha})
             return int(cur.lastrowid)
 
     def finish_run(self, task_id: str, run_id: int, status: str, output_sha: str, details: dict):
         with self.db:
-            self.db.execute("UPDATE runs SET status=?, finished_at=?, output_sha=?, details=? WHERE id=? AND task_id=?",(status,time.time(),output_sha,canonical(details),run_id,task_id))
-            self._event(task_id,"execution_finished",{"run_id":run_id,"status":status,"output_sha":output_sha})
+            detail_text=canonical(details)
+            cur=self.db.execute("UPDATE runs SET status=?, finished_at=?, output_sha=?, details=? WHERE id=? AND task_id=?",(status,time.time(),output_sha,detail_text,run_id,task_id))
+            if cur.rowcount!=1:
+                raise StateError("missing run to finalize")
+            self._event(task_id,"execution_finished",{"run_id":run_id,"status":status,"output_sha":output_sha,
+                "details_sha256":hashlib.sha256(detail_text.encode("utf-8")).hexdigest()})
 
     def running(self, task_id: str) -> list[dict]:
         return [dict(x) for x in self.db.execute("SELECT * FROM runs WHERE task_id=? AND status='RUNNING'",(task_id,)).fetchall()]

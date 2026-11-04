@@ -68,6 +68,14 @@ def initialize(home:Path, task_id:str, intent:Path, matrix:Path, approval:Path, 
         raise ContractError("Planner source HEAD must equal resolved worktree base commit")
     adapter_bytes=adapter_config.read_bytes() if adapter_config else None
     safety_bytes=safety_manifest.read_bytes() if safety_manifest else None
+    if safety_bytes is not None:
+        try:safety_data=json.loads(safety_bytes)
+        except (ValueError,UnicodeError) as exc:
+            raise ContractError("invalid safety manifest JSON") from exc
+        if (not isinstance(safety_data,dict) or
+            safety_data.get("live_side_effects_disabled") is not True or
+            not safety_data.get("reviewed_by")):
+            raise ContractError("safety manifest missing reviewed side-effect guard")
     root=home
     snapshots=snapshot_inputs(root,intent,matrix,approval,souls)
     try:
@@ -88,15 +96,17 @@ def initialize(home:Path, task_id:str, intent:Path, matrix:Path, approval:Path, 
               "a2a_job_id":None,"a2a_submitted_commit":None,
               "report_shas":{},"audit_shas":{},"audit_history":[],"last_error":None,
               "final_arbitration_report":None,"arbitration_case_sha256":None,
-              "protected_tests":{},**snapshots}
+              "protected_tests":{},"phase_input_commits":{},**snapshots}
         store=Store(home/"state.sqlite")
         try:store.create(task)
         finally:store.close()
         return task
     except Exception:
-        # No task DB was committed: leave no half-published snapshots on failure.
-        if not (home/"state.sqlite").exists():
-            shutil.rmtree(home/"snapshots",ignore_errors=True)
+        # Task directory was absent on entry. If initialization fails, it is
+        # not eligible for resume. Best-effort remove only this attempt's DB.
+        shutil.rmtree(home/"snapshots",ignore_errors=True)
+        for suffix in ("","-wal","-shm"):
+            (home/("state.sqlite"+suffix)).unlink(missing_ok=True)
         raise
 
 
@@ -146,8 +156,10 @@ class Pipeline:
         # It requires explicit reconciliation, not an automatic second LLM call.
         if stage not in ("0.2","1") and task.get("commit_sha"):
             repo=Path(task["worktree_path"])
-            if repo.exists() and (head(repo)!=task["commit_sha"] or not clean(repo)):
-                self._block(task,"compliance replay unsafe: Git baseline changed/dirty", "NEEDS_RECONCILIATION")
+            historical=task.get("phase_input_commits",{}).get(stage)
+            if (historical is None or not repo.exists() or
+                head(repo)!=historical or head(repo)!=task["commit_sha"] or not clean(repo)):
+                self._block(task,"compliance replay unsafe: historical Git input baseline changed/dirty", "NEEDS_RECONCILIATION")
                 return True
         task["compliance_retraces"]+=1
         # Retrying exactly the affected stage with its downstream stages is the
@@ -199,9 +211,9 @@ class Pipeline:
             valid,delta=test_commit_transition(workdir,before_head,after_head)
             if not valid:
                 audit["errors"].append(f"Tester changed HEAD outside additive test-only commits: {delta}")
-            if role=="tester_gate_a":
-                # Preserve all test files present at the end of a Tester A run,
-                # including failing exams; a Worker may not weaken or delete them.
+            # Gate A preserves baseline tests and the new challenge; Gate B may
+            # only ADD tests. Do not accept a changed/deleted pre-existing exam.
+            if not audit["errors"]:
                 task["protected_tests"].update({k:v for k,v in after.items() if test_path(k)})
         if audit["errors"]:
             audit["verdict"]="NON_COMPLIANT"
@@ -336,9 +348,18 @@ class Pipeline:
         if stage in ("2","5.1"):
             new_commit=head(Path(task["worktree_path"]))
             if stage=="5.1" and new_commit==task.get("commit_sha"):
-                reason=payload.get("no_op_reason") or payload.get("report","")
-                if not reason or not any(x in str(reason).lower() for x in ("no p0", "no-op", "no defect", "无缺陷", "无需整改")):
-                    self._violation(task,stage,["no-op remediation needs explicit reason"]);return
+                reason=payload.get("no_op_reason")
+                if payload.get("no_op") is not True or not isinstance(reason,str) or not reason.strip():
+                    self._violation(task,stage,["no-op remediation requires structured no_op=true and nonempty no_op_reason"]);return
+                # A no-op is permissible only when upstream blind reports have
+                # no actionable blocking finding. Otherwise new code evidence
+                # or explicit adjudication is required, not a keyword in prose.
+                collection=read_json(self.root/"artifacts"/"05_0_blind_review.json")
+                actionables=any(r.get("verdict")=="REQUEST_CHANGES" or any(
+                    isinstance(f,dict) and f.get("severity") in ("P0","P1","BLOCKER","IMPORTANT")
+                    for f in r.get("findings",[])) for r in collection.get("reports",[]))
+                if actionables:
+                    self._block(task,"no-op prohibited with unresolved actionable blind findings", "WAITING_CLARIFICATION");return
             task["commit_sha"]=new_commit
             if stage=="2":task["review_commit_sha"]=new_commit
         if stage=="5.2":
@@ -389,6 +410,8 @@ class Pipeline:
         status=call_adapter(task,self.root,"status",{"job_id":task["a2a_job_id"]})
         state=status.get("state")
         if state in ("FAILED","CANCELLED","REJECTED","EXPIRED"):
+            detail={key:str(status.get(key,""))[:350] for key in ("state","code","reason") if key in status}
+            self._save(task,"a2a_terminal",detail)
             self._block(task,f"A2A terminal state: {state}","BLOCKED");return
         if state not in ("COMPLETED","QUORUM_MET"):
             if state not in ("SUBMITTED","QUEUED","PENDING","RUNNING","WAITING","IN_PROGRESS"):
@@ -441,6 +464,14 @@ class Pipeline:
             path=self.root/"artifacts"/name
             if not path.is_file() or digest_file(path)!=expected:
                 problems.append(f"artifact SHA mismatch: {name}")
+        if task.get("protected_tests"):
+            try:
+                current_files=inventory(Path(task["worktree_path"]))
+                for name,expected in task["protected_tests"].items():
+                    if current_files.get(name)!=expected:
+                        problems.append(f"protected Tester exam missing/changed: {name}")
+            except (OSError,ContractError) as exc:
+                problems.append(f"protected exam inspection unavailable: {exc}")
         for name,expected in task.get("audit_shas",{}).items():
             path=self.root/"audit_evidence"/name
             if not path.is_file() or digest_file(path)!=expected:
@@ -577,9 +608,11 @@ class Pipeline:
             task=self.store.load(self.task_id)
             integrity=self.store.audit_events(self.task_id)+self._gate02_errors(task)
             if integrity:
-                # Cannot dispatch a single role on a corrupt journal or missing Gate 0.2.
-                self._block(task,"pre-dispatch integrity failure: "+"; ".join(integrity),"BLOCKED")
-                return self.status()
+                # Never rewrite a tampered task row: preserve forensic journal.
+                result=self.status()
+                result["status"]="BLOCKED"
+                result["last_error"]="pre-dispatch integrity failure: "+"; ".join(integrity)
+                return result
             if task["mode"]=="integration":
                 # Contract for real signed provider, test and A2A evidence is not
                 # available in P1 v0.2: no real agent calls or apparent green gates.
@@ -596,10 +629,16 @@ class Pipeline:
                     self._block(task,"ambiguous RUNNING invocation; reconcile externally before resume", "NEEDS_RECONCILIATION");break
                 integrity=self.store.audit_events(self.task_id)+self._gate02_errors(task)
                 if integrity:
-                    self._block(task,"pre-phase integrity failure: "+"; ".join(integrity),"BLOCKED");break
+                    # A phase that finds a broken chain must not rewrite the row.
+                    result=self.status()
+                    result["status"]="BLOCKED"
+                    result["last_error"]="pre-phase integrity failure: "+"; ".join(integrity)
+                    return result
                 try:
                     require_snapshot(task,self.root)
                     stage=task["stage"]
+                    if stage not in ("0.2","gate0.2","1","5.85","gate5.9") and task.get("commit_sha"):
+                        task.setdefault("phase_input_commits",{})[stage]=task["commit_sha"]
                     task["status"]="RUNNING"
                     self._save(task,"phase_enter",{"stage":stage})
                     if stage=="0.2":
@@ -627,6 +666,11 @@ class Pipeline:
     def resume(self,max_steps:int=40)->dict:
         with exclusive_lock(self.root/".task.lock"):
             task=self.store.load(self.task_id)
+            # Do not seal an untrusted task row with a new valid journal event.
+            problems=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+            if problems:
+                raise PipelineError("resume preflight integrity failure: "+"; ".join(problems))
+            require_snapshot(task,self.root)
             if task["status"]=="WAITING_EXTERNAL" and task["stage"]=="5.0":
                 task["status"]="READY"
                 self._save(task,"external_poll_resumed")
