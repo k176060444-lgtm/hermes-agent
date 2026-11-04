@@ -1,0 +1,66 @@
+AUDIT_STATUS: COMPLETE (offline code audit); real integration/production NOT_VERIFIED
+Audited source SHA: 2fd65c1269dcb29391ffac1579745c1dddfe04f5
+Audited parent / Round-002 report commit: 541c25a20334b9cb1c77fe7bb34a2e13965eaeeb
+Audited tree SHA: b6ab42d1cc0e2ad5613e69df0111064cd8fef36b
+Environment: Windows 10; Python 3.11.15; pytest 9.1.0; git 2.54.0.windows.1
+Network during tests: GIT_ALLOW_PROTOCOL=file; no live A2A, real model, paid provider, P0 or production config.
+
+SOURCE INTEGRITY
+- Snapshot acquired via GitHub tree/blob API: 52 files; Git blob SHA-1 and size verified before and after all test runs.
+- Verify result: 52/52 matched manifest; errors: [].
+- Branch HEAD at audit start and before upload: 2fd65c1269dcb29391ffac1579745c1dddfe04f5 (unchanged); remote audit_evidence had README.md, round-001 and round-002 only.
+
+ORIGINAL PROJECT TESTS (unmodified snapshot, isolated basetemps)
+Command template: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUTF8=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0 python -B -m pytest -q -p no:cacheprovider --basetemp <unique> --junitxml <unique> <8 node ids per batch>
+Working directory: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round003-audit-20261104\snapshot\experiments\hermes-coding-pipeline-p1
+Collection: exit 0; 64 unique node IDs (18 test_pipeline + 29 test_remediation_round1 + 17 test_remediation_round2).
+
+Batch results (JUnit XML under testlogs/):
+- batch0.xml: tests=8 failures=0 errors=0 skipped=0 time=25.011s
+- batch1.xml: tests=8 failures=0 errors=0 skipped=0 time=12.054s
+- batch2.xml: tests=8 failures=0 errors=0 skipped=0 time=17.905s
+- batch3.xml: tests=8 failures=0 errors=0 skipped=0 time=21.487s
+- batch4.xml: tests=8 failures=0 errors=0 skipped=0 time=9.685s
+- batch5.xml: tests=8 failures=0 errors=0 skipped=0 time=11.384s
+- batch6.xml: tests=8 failures=0 errors=0 skipped=0 time=19.806s
+- batch7.xml: tests=8 failures=0 errors=0 skipped=0 time=6.049s
+TOTAL: 64/64 passed; 0 failures; 0 errors; 0 skipped; all batch exit codes 0.
+The developer claim of 64 passing tests is independently confirmed. 17 new regression tests were executed unmodified.
+
+INDEPENDENT ADVERSARIAL PROBES (probe-copy/; assertions pass when the observed behaviour is reproduced)
+Command: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file python -B -m pytest -q -s -p no:cacheprovider --basetemp <unique> --junitxml testlogs/probes.xml tests/test_round3_independent.py
+Result: 20 executions / 19 unique cases; exit 0; 0 failures; 0 errors.
+
+Probe observations (captured stdout, not product-test results):
+  flag=--assume-unchanged status=NEEDS_RECONCILIATION retraces=0 hidden=[main.py]
+  flag=--skip-worktree status=NEEDS_RECONCILIATION retraces=0 hidden=[main.py]
+  gateA-delete status=NEEDS_RECONCILIATION exam_exists=False (audit: Tester changed/deleted existing test)
+  gateB-rewrite status=NEEDS_RECONCILIATION protected=74ec9d1e... final=8142f8b0... (audit: protected exam changed)
+  resume-tamper before=1 after=1 events=34->34 status=WAITING_EXTERNAL
+  run-rewrite journal=['run 1: run details or output differs from journal'] evidence=NON_COMPLIANT
+  replay status=NEEDS_RECONCILIATION retraces=0 phase2=dd04a50d... current=bedffb97...
+  no-op-valid status=WAITING_GATE_5_9 retraces=0
+  keyword-fake status=FAILED retraces=2 (structured no_op required)
+  no-op-actionable status=WAITING_CLARIFICATION
+  altered soul rejected at initialization (Soul SHA mismatch)
+  frozen-adapter payload=FROZEN-ADAPTER (mutable task pointer not consulted)
+  direct integration call_adapter rejected (NOT_VERIFIED)
+  bad-report and blind_roles mismatches rejected
+  a2a-terminal status=BLOCKED journal contains UNIQUE-DIAG-927 and E42
+  failed init cleaned; retry succeeded
+  parallel seen=[quality_reviewer, spec_reviewer] audits both present, same SHA
+  DEFECT conftest-bypass status=WAITING_GATE_5_9 conftest=True evidence=COMPLIANT
+  DEFECT deleted-run id=3 issues=[] evidence=COMPLIANT
+  OBSERVATION integrity-block returned=BLOCKED persisted=WAITING_EXTERNAL
+
+SUPPLEMENTARY CHECKS (not counted in the 19 unique probe cases)
+- CRLF/clean-filter check: repository with .gitattributes "*.txt text eol=crlf" and CRLF worktree -> clean=True, hidden=[], tracked mismatch=[] (no false block).
+- Concurrency stress: 4 separate Store connections x 150 start/finish pairs (600 runs), barrier-synchronized -> 0 thread exceptions, 0 journal errors. Does not prove absence of all races; no failure observed.
+
+TOTAL DISTINCT OFFLINE CASES: 64 project tests + 19 independent probe cases = 83; plus 2 supplementary checks = 85 checked scenarios. 0 unexpected failures/errors.
+
+LIMITS
+- All tests are offline fixtures/local Git/local stubs. No real Codex/OpenCode, model, P0, Debian node, paid call, E: worktree or production path was used.
+- SQLite and run-row tampering probes assume local write access to state.sqlite. Git probes use disposable worktrees only.
+- R2-008 (unbounded subprocess output) was inspected statically, not by injecting a multi-gigabyte stream. It is a P3 non-blocking hardening item.
+- Real A2A raw transport receipts, physical host attestation, human signer identity and trusted test execution receipts remain NOT_VERIFIED.
