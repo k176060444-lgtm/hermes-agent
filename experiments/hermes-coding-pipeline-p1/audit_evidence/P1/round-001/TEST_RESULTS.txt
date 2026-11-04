@@ -1,0 +1,493 @@
+AUDIT_STATUS: INCOMPLETE — preliminary evidence; additional cross-checks pending.
+Severity mapping: P0=BLOCKER, P1=HIGH, P2=MEDIUM, P3=LOW.
+
+P1 independent audit — actual offline test record
+Audited source SHA: 13d282596b9afee734996bb7a28ece1ace97c537
+Environment: Windows 10; Python 3.11.15; pytest 9.1.0; git 2.54.0.windows.1.
+Network during test processes: GIT_ALLOW_PROTOCOL=file; no live A2A, model, production config or remote node calls.
+
+FIXTURE INTEGRITY / DEVIATION
+- The 10 p1/*.py modules plus tests/test_pipeline.py matched the audited checkout by SHA-256.
+- Original conftest automatically creates a Git commit. In an isolated copy only, its scenario Git setup was replaced with a local clone of an existing isolated Git fixture having README.md and >=2 commits. The original conftest and all 18 test assertions were read but the original fixture was NOT executed unchanged.
+- Source collect-only: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -B -m pytest -q -p no:cacheprovider --collect-only -> exit 0; 18 tests collected.
+- CLI help: python -B -m p1 --help -> exit 0; exposes init/run/status/resume/reconcile/audit/export/approve-spec.
+- In-memory compile of p1/*.py -> exit 0; 10 modules compiled; no bytecode written.
+
+FAILED PREPARATION ATTEMPTS (not counted as P1 product failures)
+- Local-clone fixture using the shallow/promisor audited checkout: exit 1; 18 setup errors in 32.25 s; Git reported missing promisor object while network protocol was disabled.
+- Copying that sparse checkout as fixture: 1 test failed in 9.36 s, stage 1 reported project_root has uncommitted/untracked changes; cause not established. A clean independent full local Git fixture was then used. These failures are not silently omitted.
+
+COMMON SUCCESSFUL TEST COMMAND PREFIX
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0 python -B -m pytest -q -p no:cacheprovider --basetemp <unique-isolated-dir> --junitxml <unique-xml>
+Working directory: isolated offline-test-copy. Each group used a distinct basetemp and XML.
+
+UPSTREAM ASSERTIONS: 18 unique tests / 0 failures / 0 errors (adapted fixture as explained above)
+- -k 'complete_offline or gate02_blocks or gate01_mismatch or review_pair_fails or local_loop_five or a2a_one_physical': exit 0; 6 passed, 12 deselected, 17.00 s.
+- -k 'gate_b_rejection or auditor_does_not or orphan_execution or event_chain_tampering or frozen_matrix or untrusted_a2a_identity': exit 0; 6 passed, 12 deselected, 10.87 s.
+- -k 'noncompliant_reviewer or unfinished_running or a2a_same_node or report_hash_tamper or gate_b_five or missing_soul': exit 0; 6 passed, 12 deselected, 17.89 s.
+
+INDEPENDENT TESTS: 19 unique cases / 0 pytest failures. Tests explicitly asserting a defect passing mean the bug was reproduced, not fixed.
+The same prefix was used with -s and tests/test_audit_probes.py:
+- -k 'forged_host or blind_review_questions or dirty_worker or export_includes': 4 passed, exit 0, 11.59 s.
+  Observed: forged integration identity errors=[]; QUESTION+NEEDS_SPECIALIST -> WAITING_GATE_5_9; dirty M README.md -> WAITING_GATE_5_9 and COMPLIANT; changed final report verify=NON_COMPLIANT but exported=True.
+- -k 'repaired_reviewer or planner_and_worktree or reviewer_processes': 3 passed, exit 0, 11.27 s.
+  Observed: repaired report replay FAILED after retraces=2 due unresolved 5.85:pro_audit; Planner and worktree different SHAs still READY stage 2; both reviewers met a real thread barrier and cited same SHA with separate normal-path audits.
+- -k 'real_executor or nonlocal_assignment or empty_souls': 4 passed, exit 0, 9.20 s.
+  Observed: no-test local stub passed A -> 5.0 and B -> 5.3; requested node 5bao executed only on local stub as COMPLIANT; 12 empty Souls accepted.
+- -k 'worker_can_weaken': 1 passed, exit 0, 5.38 s. Observed independent exam assert False rewritten to assert True; simulation reached gate 5.9.
+- -k 'arbitrator_stub or failed_first_reviewer': 2 passed, exit 0, 6.89 s. Observed fake local arbitrator progressed; 3 Quality run details existed but 0 corresponding audit_history entries when Spec failed first.
+- -k 'windows_cross_process_lock': 1 passed, exit 0, 0.31 s. A separate competing local process was BLOCKED while lock holder held the lock.
+- -k 'stubbed_end_to_end': 1 passed, exit 0, 5.85 s. All-local stubbed harness/P0, QUESTION and NEEDS_SPECIALIST, E: restriction bypassed in test seam only: WAITING_GATE_5_9; COMPLIANT; integration label True; simulation warning False. No actual integration or remote calls.
+- -k 'budget_persists_across': latest version 3 passed, exit 0, 15.77 s. After starting a fresh Python CLI process: A 2 -> 5 FAILED, B 2 -> 5 FAILED, compliance 1 -> 2 FAILED; CLI exit 0 for each. Earlier same-process reopen variant also 3 passed, 17.65 s; do not double-count.
+
+REPRODUCTION INSTRUCTIONS
+1. Check out the audited SHA into a disposable directory. Copy P1 into another test-only directory; do not change the reviewed checkout.
+2. In the copied tests/conftest.py replace only the scenario's original git init/add/commit block with a local clone of a disposable repository whose HEAD has a parent and whose root includes tracked README.md. The actual run used the pre-existing local fixture path inside the scratch directory. No external repository is the audited baseline.
+3. Save the following exact probe source as tests/test_audit_probes.py in that disposable copy. Use the common command prefix above and run the relevant test by -k or ::test_name. Keep Git and network access restricted; do not substitute production adapters. The end-to-end stub test patches only the disposable E: drive guard as noted in its source.
+
+===== BEGIN test_audit_probes.py (exact executed source, final revision) =====
+"""Independent offline probes; these assert the observed defect, not desired behavior.
+Uses only fixture data and disposable Git worktrees. No network, A2A or real models.
+"""
+from __future__ import annotations
+import json
+import subprocess
+import sys
+import threading
+from pathlib import Path
+import pytest
+
+from p1.a2a import validate_collection
+from p1.contracts import canonical, digest_file, read_json
+from p1.gitops import git, head
+from p1.workflow import Pipeline, initialize
+import p1.workflow as workflow
+from test_pipeline import start, approve
+
+
+def test_forged_host_attestations_are_accepted(scenario):
+    s = scenario
+    matrix = read_json(s['matrix'])
+    collection = read_json(s['fixtures'] / 'a2a.json')
+    for i, r in enumerate(collection['reports']):
+        r['physical_host_id'] = f'claim-only-alias-{i}'
+        r['trusted_physical_identity_attestation'] = True
+        r['attestation_reference'] = 'unverified-user-controlled-string'
+    task = {'task_id': 'TEST-001', 'mode': 'integration', 'commit_sha': s['commit'],
+            'matrix_sha256': digest_file(s['matrix'])}
+    errors = validate_collection(task, matrix, collection, s['root'])
+    print('fabricated physical identity assertions; integration validation errors:', errors)
+    assert errors == []
+
+
+def test_blind_review_questions_reach_gate59(scenario):
+    s = scenario
+    collection = read_json(s['fixtures'] / 'a2a.json')
+    for r, verdict in zip(collection['reports'], ('QUESTION', 'NEEDS_SPECIALIST')):
+        r['verdict'] = verdict
+        r['report'] = f'SIMULATED: unresolved {verdict}'
+    (s['fixtures'] / 'a2a.json').write_text(canonical(collection) + '\n')
+    p = start(s)
+    try:
+        out = approve(p, s)
+        print('blind verdicts QUESTION + NEEDS_SPECIALIST ->', out['status'])
+        assert out['status'] == 'WAITING_GATE_5_9'
+    finally:
+        p.close()
+
+
+def test_dirty_worker_tree_passes_all_gates(scenario, monkeypatch):
+    s = scenario
+    original = workflow.invoke
+    def fake_invoke(task, role, stage, root, attempt, run_id):
+        out = original(task, role, stage, root, attempt, run_id)
+        if role == 'worker':
+            path = Path(task['worktree_path']) / 'README.md'
+            path.write_text(path.read_text(encoding='utf-8') + '\nAUDIT-FIXTURE-UNCOMMITTED-CHANGE\n', encoding='utf-8')
+        return out
+    monkeypatch.setattr(workflow, 'invoke', fake_invoke)
+    p = start(s)
+    try:
+        out = approve(p, s)
+        status = git(s['worktree'], 'status', '--porcelain', '--untracked-files=normal')
+        ev = p.verify_evidence()
+        print('dirty worker tree ->', out['status'], '; git status:', repr(status), '; evidence:', ev['verdict'])
+        assert out['status'] == 'WAITING_GATE_5_9'
+        assert status and 'README.md' in status
+        assert ev['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_export_includes_tampered_final_report(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        assert approve(p, s)['status'] == 'WAITING_GATE_5_9'
+        report = s['home'] / 'artifacts' / 'PROCESS_COMPLIANCE_REPORT.md'
+        report.write_text('TAMPERED-INDEPENDENT-TEST\n', encoding='utf-8')
+        ev = p.verify_evidence()
+        exported = p.export_report()
+        print('verification:', ev['verdict'], '; tampered bytes exported:', 'TAMPERED-INDEPENDENT-TEST' in exported)
+        assert ev['verdict'] == 'NON_COMPLIANT'
+        assert 'TAMPERED-INDEPENDENT-TEST' in exported
+    finally:
+        p.close()
+
+
+def test_repaired_reviewer_artifact_still_exhausts_retraces(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        before = p.run(max_steps=8)
+        assert before['stage'] == '5.85' and before['status'] == 'READY', before
+        old = sorted((s['home'] / 'artifacts').glob('*_spec_reviewer.md'))[-1]
+        old.write_text('CORRUPTED-FOR-OFFLINE-TEST\n', encoding='utf-8')
+        out = p.run()
+        task = p.store.load(p.task_id)
+        print('after review artifact is regenerated:', out['status'], 'retraces=', out['compliance_retraces'],
+              'last_error=', out['last_error'])
+        print('final-audit records:', [(r['stage'], r['verdict']) for r in task['audit_history'] if r['stage'] == '5.85'])
+        assert out['status'] == 'FAILED'
+        assert out['compliance_retraces'] == 2
+        assert 'unresolved audit: 5.85:pro_audit' in out['last_error']
+    finally:
+        p.close()
+
+
+def test_planner_and_worktree_can_use_different_commits(scenario):
+    s = scenario
+    souls = Path(__file__).resolve().parents[1] / 'souls'
+    initialize(s['home'], 'TEST-001', s['intent'], s['matrix'], s['gate01'], souls,
+               s['project'], s['worktree'], 'offline_fixture', fixture_dir=s['fixtures'], base_ref='HEAD~1')
+    p = Pipeline(s['home'])
+    try:
+        assert p.run()['status'] == 'WAITING_APPROVAL'
+        planner = [r for r in p.store.results(p.task_id) if r['role'] == 'planner'][0]
+        planner_head = json.loads(planner['details'])['before_head']
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        after = p.run(max_steps=1)
+        print('planner HEAD:', planner_head, '; approved-spec worktree HEAD:', after['commit_sha'], '; status:', after['status'])
+        assert after['stage'] == '2' and after['status'] == 'READY'
+        assert planner_head != after['commit_sha']
+    finally:
+        p.close()
+
+
+def test_reviewer_processes_overlap_and_both_audits_recorded(scenario, monkeypatch):
+    s = scenario
+    original = workflow.invoke
+    barrier = threading.Barrier(2, timeout=10)
+    observed = []
+    lock = threading.Lock()
+    def synchronized_invoke(task, role, stage, root, attempt, run_id):
+        if role in {'spec_reviewer', 'quality_reviewer'}:
+            with lock:
+                observed.append(role)
+            barrier.wait()
+        return original(task, role, stage, root, attempt, run_id)
+    monkeypatch.setattr(workflow, 'invoke', synchronized_invoke)
+    p = start(s)
+    try:
+        out = approve(p, s)
+        task = p.store.load(p.task_id)
+        runs = [r for r in p.store.results(p.task_id) if r['role'] in {'spec_reviewer', 'quality_reviewer'}]
+        payloads = [json.loads(r['details'])['payload'] for r in runs]
+        auditors = {r['role'] for r in task['audit_history'] if r['stage'] in {'3', '4'}}
+        print('review barrier observed:', sorted(observed), '; input SHAs:', [x['reviewed_commit'] for x in payloads], '; independent audits:', sorted(auditors))
+        assert out['status'] == 'WAITING_GATE_5_9'
+        assert sorted(observed) == ['quality_reviewer', 'spec_reviewer']
+        assert len({x['reviewed_commit'] for x in payloads}) == 1
+        assert auditors == {'spec_reviewer', 'quality_reviewer'}
+    finally:
+        p.close()
+
+
+def _fake_local_runner(s, payload, harness):
+    runner = s['root'] / ('fake_runner_' + harness + '.py')
+    runner.write_text('import json\nprint(json.dumps(' + repr(payload) + '))\n', encoding='utf-8')
+    adapter = s['root'] / ('fake_adapter_' + harness + '.json')
+    adapter.write_text(canonical({'harnesses': {harness: {'argv': [sys.executable, str(runner)],
+                       'explicitly_authorized': True, 'timeout_seconds': 20}}}) + '\n', encoding='utf-8')
+    return adapter
+
+
+def test_real_executor_accepts_fabricated_gate_a_pass(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        ready = p.run(max_steps=3)
+        assert ready['stage'] == '4.5' and ready['status'] == 'READY', ready
+        adapter = _fake_local_runner(s, {'verdict': 'GATE_A_PASS', 'report': 'fabricated PASS; no tests ran'}, 'codex')
+        task = p.store.load(p.task_id)
+        task['mode'] = 'integration'
+        task['adapter_config'] = str(adapter)
+        p.store.save(task, 'offline_probe_switch_to_stubbed_integration')
+        out = p.run(max_steps=1)
+        task = p.store.load(p.task_id)
+        print('local stub ran zero test commands; integration Gate A ->', out['stage'], out['status'],
+              '; compliance:', task['audit_history'][-1]['verdict'])
+        assert out['stage'] == '5.0' and out['status'] == 'READY'
+        assert task['audit_history'][-1]['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_real_executor_accepts_fabricated_gate_b_pass(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        ready = p.run(max_steps=6)
+        assert ready['stage'] == '5.2' and ready['status'] == 'READY', ready
+        payload = {'verdict': 'GATE_B_PASS', 'report': 'fabricated PASS; no tests ran',
+                   'checks': {'smoke': 'PASS', 'canary': 'PASS', 'regression': 'PASS'}}
+        adapter = _fake_local_runner(s, payload, 'opencode')
+        task = p.store.load(p.task_id)
+        task['mode'] = 'integration'
+        task['adapter_config'] = str(adapter)
+        p.store.save(task, 'offline_probe_switch_to_stubbed_integration')
+        out = p.run(max_steps=1)
+        task = p.store.load(p.task_id)
+        print('local stub ran zero test commands; integration Gate B ->', out['stage'], out['status'],
+              '; compliance:', task['audit_history'][-1]['verdict'])
+        assert out['stage'] == '5.3' and out['status'] == 'READY'
+        assert task['audit_history'][-1]['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_nonlocal_assignment_is_executed_by_local_stub(scenario):
+    s = scenario
+    matrix = read_json(s['matrix'])
+    matrix['roles']['planner']['node'] = '5bao'
+    s['matrix'].write_text(canonical(matrix) + '\n', encoding='utf-8')
+    approval = read_json(s['gate01'])
+    approval['matrix_sha256'] = digest_file(s['matrix'])
+    s['gate01'].write_text(canonical(approval) + '\n', encoding='utf-8')
+    s['init']()
+    adapter = _fake_local_runner(s, {'verdict': 'PASS', 'task_spec': 'LOCAL STUB SPEC',
+                                   'runtime': 'local_python_stub_only'}, 'codex')
+    p = Pipeline(s['home'])
+    try:
+        task = p.store.load(p.task_id)
+        task['mode'] = 'integration'
+        task['adapter_config'] = str(adapter)
+        p.store.save(task, 'offline_probe_switch_to_stubbed_integration')
+        out = p.run(max_steps=1)
+        run = p.store.results(p.task_id)[-1]
+        details = json.loads(run['details'])
+        print('matrix planner node:', details['invocation']['assignment']['node'],
+              '; actual local stub output:', details['payload']['runtime'],
+              '; compliance:', details['audit']['verdict'], '; stage:', out['stage'])
+        assert details['invocation']['assignment']['node'] == '5bao'
+        assert details['payload']['runtime'] == 'local_python_stub_only'
+        assert details['audit']['verdict'] == 'COMPLIANT'
+        assert out['status'] == 'WAITING_APPROVAL'
+    finally:
+        p.close()
+
+
+def test_empty_souls_are_accepted_as_role_contracts(scenario):
+    s = scenario
+    from p1.contracts import ROLE_NAMES
+    souls = s['root'] / 'empty_souls'
+    souls.mkdir()
+    for role in ROLE_NAMES:
+        (souls / (role + '.md')).write_text('', encoding='utf-8')
+    initialize(s['home'], 'TEST-001', s['intent'], s['matrix'], s['gate01'], souls,
+               s['project'], s['worktree'], 'offline_fixture', fixture_dir=s['fixtures'])
+    p = Pipeline(s['home'])
+    try:
+        out = p.run(max_steps=1)
+        print('12 empty Soul documents accepted; Planner ->', out['stage'], out['status'])
+        assert out['status'] == 'WAITING_APPROVAL'
+    finally:
+        p.close()
+
+
+def test_worker_can_weaken_tester_a_exam_and_pass(scenario, monkeypatch):
+    s = scenario
+    original = workflow.invoke
+    def fake_invoke(task, role, stage, root, attempt, run_id):
+        out = original(task, role, stage, root, attempt, run_id)
+        exam = Path(task['worktree_path']) / 'tests' / 'test_guard.py'
+        if role == 'tester_gate_a' and attempt == 1:
+            exam.parent.mkdir(parents=True, exist_ok=True)
+            exam.write_text('def test_guard(): assert False\n', encoding='utf-8')
+            out['payload'] = {'verdict': 'FAIL', 'report': 'SIMULATED independent exam failed'}
+        elif role == 'worker' and attempt == 2:
+            exam.write_text('def test_guard(): assert True\n', encoding='utf-8')
+        return out
+    monkeypatch.setattr(workflow, 'invoke', fake_invoke)
+    p = start(s)
+    try:
+        out = approve(p, s)
+        content = (s['worktree'] / 'tests' / 'test_guard.py').read_text(encoding='utf-8').strip()
+        print('tester exam after worker retry:', content, '; Gate A round:', out['round_a'], '; final:', out['status'])
+        assert content == 'def test_guard(): assert True'
+        assert out['round_a'] == 2 and out['status'] == 'WAITING_GATE_5_9'
+    finally:
+        p.close()
+
+
+def test_arbitrator_stub_with_no_case_reads_is_accepted(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        ready = p.run(max_steps=7)
+        assert ready['stage'] == '5.3' and ready['status'] == 'READY', ready
+        payload = {'verdict': 'PASS', 'report': 'local stub did not open the case files', 'reviewed_commit': s['commit']}
+        adapter = _fake_local_runner(s, payload, 'codex')
+        task = p.store.load(p.task_id)
+        task['mode'] = 'integration'
+        task['adapter_config'] = str(adapter)
+        p.store.save(task, 'offline_probe_switch_to_stubbed_integration')
+        out = p.run(max_steps=1)
+        task = p.store.load(p.task_id)
+        print('arbitrator stub read no case; next:', out['stage'], out['status'],
+              '; compliance:', task['audit_history'][-1]['verdict'])
+        assert out['stage'] == '5.85' and out['status'] == 'READY'
+        assert task['audit_history'][-1]['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_failed_first_reviewer_omits_second_audit_history(scenario):
+    s = scenario
+    bad = {'verdict': 'APPROVE', 'report': 'SIMULATED wrong commit',
+           'reviewed_commit': '0' * 40, 'spec_sha256': s['spec_sha']}
+    (s['fixtures'] / '3-spec_reviewer.json').write_text(canonical(bad) + '\n', encoding='utf-8')
+    p = start(s)
+    try:
+        out = approve(p, s)
+        task = p.store.load(p.task_id)
+        quality_runs = [r for r in p.store.results(p.task_id) if r['role'] == 'quality_reviewer']
+        quality_audits = [r for r in task['audit_history'] if r['role'] == 'quality_reviewer']
+        embedded_audits = [json.loads(r['details'])['audit']['verdict'] for r in quality_runs]
+        print('quality runs:', len(quality_runs), '; embedded results:', embedded_audits,
+              '; independent audit history records:', len(quality_audits), '; overall:', out['status'])
+        assert len(quality_runs) == 3 and embedded_audits == ['COMPLIANT'] * 3
+        assert quality_audits == []
+    finally:
+        p.close()
+
+
+def test_windows_cross_process_lock_fails_closed(tmp_path):
+    lock = tmp_path / 'independent-process.lock'
+    holder_code = ('import sys; from pathlib import Path; from p1.state import exclusive_lock; '
+                   'cm=exclusive_lock(Path(sys.argv[1])); cm.__enter__(); '
+                   'print("HELD", flush=True); sys.stdin.readline(); cm.__exit__(None,None,None)')
+    contender_code = ('import sys; from pathlib import Path; from p1.state import exclusive_lock,StateError; '
+                      'cm=exclusive_lock(Path(sys.argv[1])); '
+                      '\ntry:\n cm.__enter__()\nexcept StateError:\n print("BLOCKED")\nelse:\n print("ACQUIRED")\n cm.__exit__(None,None,None)')
+    holder = subprocess.Popen([sys.executable, '-B', '-c', holder_code, str(lock)],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, encoding='utf-8')
+    try:
+        held = holder.stdout.readline().strip()
+        probe = subprocess.run([sys.executable, '-B', '-c', contender_code, str(lock)],
+                               capture_output=True, text=True, encoding='utf-8', timeout=10)
+        print('holder:', held, '; competing process:', probe.stdout.strip(), '; exit:', probe.returncode)
+        assert held == 'HELD' and probe.returncode == 0 and probe.stdout.strip() == 'BLOCKED'
+    finally:
+        holder.communicate(input='\n', timeout=10)
+
+
+def test_stubbed_end_to_end_integration_claims_real_compliance(scenario, monkeypatch):
+    s = scenario
+    runner = s['root'] / 'all_roles_local_stub.py'
+    runner.write_text('''import hashlib,json,subprocess,sys
+from pathlib import Path
+role,spec,repo=sys.argv[1:]
+commit=subprocess.check_output(["git","-C",repo,"rev-parse","HEAD"],text=True).strip()
+p={"verdict":"PASS","report":"LOCAL STUB; no external model or test executed"}
+if role=="planner": p["task_spec"]="# offline spec from local stub\\n"
+if role in ("spec_reviewer","quality_reviewer"):
+ p.update(verdict="APPROVE",reviewed_commit=commit,spec_sha256=hashlib.sha256(Path(spec).read_bytes()).hexdigest())
+if role=="tester_gate_a": p["verdict"]="GATE_A_PASS"
+if role=="tester_gate_b": p.update(verdict="GATE_B_PASS",checks={"smoke":"PASS","canary":"PASS","regression":"PASS"})
+if role=="arbitrator": p["reviewed_commit"]=commit
+print(json.dumps(p))
+''', encoding='utf-8')
+    adapter_script = s['root'] / 'p0_local_stub.py'
+    adapter_script.write_text('''import json,sys
+from pathlib import Path
+storage=Path(sys.argv[1]); operation=sys.argv[2]
+r=json.load(sys.stdin)
+if operation=="submit":
+ storage.write_text(json.dumps(r)); result={"job_id":"LOCAL-STUB-ONLY"}
+elif operation=="status": result={"state":"COMPLETED"}
+else:
+ r=json.loads(storage.read_text()); result={k:r[k] for k in ("task_id","commit_sha","matrix_sha256")}
+ result["reports"]=[{"node":node,"physical_host_id":"FORGED-"+node,"commit_sha":r["commit_sha"],
+  "verdict":verdict,"report":"LOCAL STUB ONLY", "trusted_physical_identity_attestation":True,
+  "attestation_reference":"UNVERIFIED"} for node,verdict in (("5bao","QUESTION"),("9bao","NEEDS_SPECIALIST"))]
+print(json.dumps(result))
+''', encoding='utf-8')
+    harness = {'argv': [sys.executable, str(runner), '{role}', '{spec}', '{worktree}'],
+               'explicitly_authorized': True, 'timeout_seconds': 20}
+    adapters = s['root'] / 'all_stub_adapters.json'
+    adapters.write_text(canonical({'harnesses': {'codex': harness, 'opencode': harness},
+        'a2a': {'argv': [sys.executable, str(adapter_script), str(s['root'] / 'fake_p0_job.json')],
+                'explicitly_authorized': True, 'timeout_seconds': 20}}) + '\n', encoding='utf-8')
+    safety = s['root'] / 'stub_safety.json'
+    safety.write_text(canonical({'live_side_effects_disabled': True, 'reviewed_by': 'OFFLINE-STUB-ONLY'}) + '\n', encoding='utf-8')
+    souls = Path(__file__).resolve().parents[1] / 'souls'
+    initialize(s['home'], 'TEST-001', s['intent'], s['matrix'], s['gate01'], souls, s['project'], s['worktree'],
+               'integration', adapter_config=adapters, safety_manifest=safety)
+    original_create = workflow.create_worktree
+    def scratch_worktree(project_root, target, task_id, base_ref, offline):
+        # Sole test seam: allow a disposable C: worktree instead of integration's required E:.
+        return original_create(project_root, target, task_id, base_ref, True)
+    monkeypatch.setattr(workflow, 'create_worktree', scratch_worktree)
+    p = Pipeline(s['home'])
+    try:
+        assert p.run()['status'] == 'WAITING_APPROVAL'
+        p.approve_spec('OFFLINE-STUB-HUMAN', 'OFFLINE-STUB-APPROVAL', p.store.load(p.task_id)['proposed_spec_sha256'])
+        out = p.run()
+        doc = p.export_report()
+        ev = p.verify_evidence()
+        print('entirely local stubs; A2A QUESTION/NEEDS_SPECIALIST; final:', out['status'],
+              '; evidence:', ev['verdict'], '; integration label:', 'Mode: `integration`' in doc,
+              '; simulation warning:', 'SIMULATION ONLY' in doc)
+        assert out['status'] == 'WAITING_GATE_5_9' and ev['verdict'] == 'COMPLIANT'
+        assert 'Mode: `integration`' in doc and 'SIMULATION ONLY' not in doc
+    finally:
+        p.close()
+
+
+@pytest.mark.parametrize('budget', ['a', 'b', 'compliance'])
+def test_budget_persists_across_pipeline_reopen(scenario, budget):
+    s = scenario
+    if budget == 'a':
+        fixture = {'verdict': 'REQUEST_CHANGES', 'report': 'SIMULATED failure',
+                   'reviewed_commit': s['commit'], 'spec_sha256': s['spec_sha']}
+        filename, steps, count_key, expected_first, expected_final = '3-spec_reviewer.json', 3, 'round_a', 2, 5
+    elif budget == 'b':
+        fixture = {'verdict': 'REJECT', 'report': 'SIMULATED rejection', 'reviewed_commit': s['commit']}
+        filename, steps, count_key, expected_first, expected_final = '5_3-arbitrator.json', 8, 'round_b', 2, 5
+    else:
+        fixture = {'verdict': 'APPROVE', 'report': 'SIMULATED wrong commit',
+                   'reviewed_commit': '0' * 40, 'spec_sha256': s['spec_sha']}
+        filename, steps, count_key, expected_first, expected_final = '3-spec_reviewer.json', 3, 'compliance_retraces', 1, 2
+    (s['fixtures'] / filename).write_text(canonical(fixture) + '\n', encoding='utf-8')
+    p = start(s)
+    p.approve_spec('user', 'offline-approval', s['spec_sha'])
+    before = p.run(max_steps=steps)
+    p.close()
+    child = subprocess.run([sys.executable, '-B', '-m', 'p1', 'run', '--home', str(s['home'])],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+    after = json.loads(child.stdout)
+    print('new process budget', budget, ': before=', before[count_key], ', after=', after[count_key],
+          ', status=', after['status'], ', CLI exit=', child.returncode)
+    assert before[count_key] == expected_first
+    assert after[count_key] == expected_final and after['status'] == 'FAILED'
+    assert child.returncode == 0
+
+
+
+===== END test_audit_probes.py =====

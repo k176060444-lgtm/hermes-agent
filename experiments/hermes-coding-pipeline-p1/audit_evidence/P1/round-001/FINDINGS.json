@@ -1,0 +1,475 @@
+{
+  "audited_commit_sha": "13d282596b9afee734996bb7a28ece1ace97c537",
+  "verdict": "FAIL",
+  "findings": [
+    {
+      "id": "P1-001",
+      "category": "reproduced_code_defect",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/a2a.py",
+      "line": 61,
+      "claim": "仅凭适配器返回的布尔值和任意字符串即可通过真实模式的物理节点身份检查。",
+      "evidence": "validate_collection 对每份报告仅检查 trusted_physical_identity_attestation is True 和非空 attestation_reference；未验证证明的签名、来源、节点映射或真实性。",
+      "reproduction": "运行 test_forged_host_attestations_are_accepted：向 integration 校验传入两个自编 host_id、True 和任意 reference。",
+      "expected": "无法独立核验两台不同受信物理机时应阻断。",
+      "actual": "校验返回空错误列表 []；两个身份声明被计入 quorum。",
+      "recommendation": "在可信 P0 身份锚和不可伪造的节点映射接入前，integration 一律 fail closed；之后验证原始报告、绑定和证明。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_forged_host_attestations_are_accepted",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/a2a.py",
+          "line": 46
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/a2a.py",
+          "line": 70
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/docs/A2A_INTERFACE_REQUEST.md",
+          "line": 13
+        }
+      ],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-002",
+      "category": "reproduced_code_defect",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/a2a.py",
+      "line": 59,
+      "claim": "盲审返回 QUESTION 或 NEEDS_SPECIALIST 仍可进入后续环节并抵达 Gate 5.9。",
+      "evidence": "校验只要求 verdict 为非空值；_phase_a2a 校验成功后直接 advance 到 5.1，未处理需澄清或专家裁决的 verdict。",
+      "reproduction": "运行 test_blind_review_questions_reach_gate59：本地离线假报告分别设 QUESTION、NEEDS_SPECIALIST。",
+      "expected": "存在未澄清问题或待专家裁决时必须暂停，不能生成放行卷宗。",
+      "actual": "离线状态到达 WAITING_GATE_5_9。",
+      "recommendation": "验证盲审判决枚举；QUESTION/NEEDS_SPECIALIST 进入人工等待，REQUEST_CHANGES 携证据进入整改。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_blind_review_questions_reach_gate59",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 271
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 282
+        }
+      ],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-003",
+      "category": "reproduced_code_defect",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 212,
+      "claim": "Gate A/B 接受只打印 PASS 的本地包装器，未核验实际测试执行及原始退出码。",
+      "evidence": "Gate A 检查 verdict 和非空报告；Gate B 只检查三个字符串等于 PASS。audit_role 未要求经可信来源绑定的测试命令、日志和退出码。",
+      "reproduction": "运行 test_real_executor_accepts_fabricated_gate_a_pass 与 test_real_executor_accepts_fabricated_gate_b_pass：在一次性状态中切到 integration 代码路径，使用仅打印 JSON、没有执行测试的本地 Python 假包装器。",
+      "expected": "没有可信命令、原始日志及真实退出码时阻断。",
+      "actual": "Gate A 进入 5.0，Gate B 进入 5.3，两次合规记录均为 COMPLIANT。",
+      "recommendation": "接入可信测试执行器，对执行记录与角色、提交、命令、日志摘要和退出码做绑定；未完成前禁止真实模式放行。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_real_executor_accepts_fabricated_gate_a_pass; test_real_executor_accepts_fabricated_gate_b_pass",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 234
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+          "line": 18
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+          "line": 39
+        }
+      ],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-004",
+      "category": "reproduced_code_defect",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 231,
+      "claim": "Worker 未提交的改动可连同旧 HEAD 被送审并通过整条离线流程。",
+      "evidence": "Worker 完成后只记录 git HEAD，没有检查工作树/暂存区干净；双审只要求前后清单不变且报告引用 HEAD。",
+      "reproduction": "运行 test_dirty_worker_tree_passes_all_gates：在独立假 Worker 中更改被跟踪 README.md、不创建提交，然后继续。",
+      "expected": "审查、盲审及终测使用的源码必须与记录的同一 Git 提交一致；脏工作区应阻断。",
+      "actual": "git status 为 M README.md，仍抵达 WAITING_GATE_5_9，verify_evidence 返回 COMPLIANT。",
+      "recommendation": "Worker 和 Tester 完成后要求产物全部纳入受审提交且工作区干净；复核提交、工作区与最终卷宗的一致性。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_dirty_worker_tree_passes_all_gates",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 162
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+          "line": 28
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/gitops.py",
+          "line": 21
+        }
+      ],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-005",
+      "category": "reproduced_code_defect",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+      "line": 48,
+      "claim": "未审阅案卷的仲裁假包装器可仅凭 PASS、报告字符串和引用 SHA 获得合规记录。",
+      "evidence": "arbitrator 分支只对比 reviewed_commit 和 task.commit_sha；没有核验盲审意见、整改 diff 和终测原始证据是否交付或被可信仲裁器审阅。",
+      "reproduction": "运行 test_arbitrator_stub_with_no_case_reads_is_accepted：本地假包装器只打印 JSON，不打开案卷文件。",
+      "expected": "缺少可信仲裁调用及全卷输入、原始仲裁报告来源时不得推进。",
+      "actual": "阶段推进到 5.85，角色合规记录为 COMPLIANT。",
+      "recommendation": "在可信仲裁适配器中强制传入并绑定案卷清单、实际输入哈希、执行身份和原始报告；缺证据阻断。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_arbitrator_stub_with_no_case_reads_is_accepted",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 212
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/executor.py",
+          "line": 46
+        }
+      ],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-006",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+      "line": 28,
+      "claim": "整改 Worker 可以削弱 Tester A 考卷，系统未阻断。",
+      "evidence": "只对只读和 test-only 角色比较权限；Worker 不受既有测试保护，也不核验 Tester 已交付考卷的内容或删除/削弱。",
+      "reproduction": "运行 test_worker_can_weaken_tester_a_exam_and_pass：第一轮测试官写入 assert False 并失败；第二轮 Worker 改成 assert True。",
+      "expected": "Tester 已交付测试不应被 Worker 删除或削弱，例外需明确授权。",
+      "actual": "更改后第二轮结束并抵达离线 WAITING_GATE_5_9。",
+      "recommendation": "保存 Tester 考卷的受管基线，限制 Worker 对考卷的修改；任何例外走显式审查，不能静默覆盖。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_worker_can_weaken_tester_a_exam_and_pass",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/audit.py",
+          "line": 32
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 200
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/souls/worker.md",
+          "line": 15
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-007",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 432,
+      "claim": "Gate 5.9 export 未校验报告哈希，仍可输出被篡改的合规报告。",
+      "evidence": "verify_evidence 能检测 report_shas 不匹配；export_report 只检查状态并直接读取仲裁及合规文件。",
+      "reproduction": "运行 test_export_includes_tampered_final_report：到达离线 Gate 5.9 后改写合规报告再分别执行 verify 与 export。",
+      "expected": "输出前必须验证报告原文、哈希与对应事件；不匹配应停止。",
+      "actual": "verify_evidence 为 NON_COMPLIANT，但 export 包含 TAMPERED-INDEPENDENT-TEST。",
+      "recommendation": "export 内部原子验证并读取已绑定的最新报告，校验失败不输出为正式卷宗。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_export_includes_tampered_final_report",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 284
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 439
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-008",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 321,
+      "claim": "合规回溯修复报告后，旧的 5.85 NON_COMPLIANT 被再次当成未解决问题并耗尽预算。",
+      "evidence": "final audit 把最新的各阶段审计都纳入未解决问题，包括上一轮自身的 5.85；新 5.85 尚未生成时其旧失败无法消除。",
+      "reproduction": "运行 test_repaired_reviewer_artifact_still_exhausts_retraces：在到达 5.85 前损坏 Spec 报告，允许流程重生成报告。",
+      "expected": "源报告成功重生成且其后完整重新合规时，应重新评估并在预算内前进。",
+      "actual": "三次最终审计均 NON_COMPLIANT，预算为 2，最终 FAILED，last_error 指向 unresolved audit: 5.85:pro_audit。",
+      "recommendation": "判定本次全局合规时排除该次待重算的历史 5.85；保留历史但依据重跑代际判定当前未解决问题。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_repaired_reviewer_artifact_still_exhausts_retraces",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 340
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 345
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 109
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-009",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 128,
+      "claim": "Planner 看到的提交与 Gate 0.2 后 worktree 的 base_ref 可以不同。",
+      "evidence": "Planner 固定在 project_root 当前 HEAD；Phase 1 根据独立的 base_ref 建 worktree，未把 Planner 所审提交与实际基线比较。",
+      "reproduction": "运行 test_planner_and_worktree_can_use_different_commits：以带父提交的本地 Git fixture 初始化 base_ref=HEAD~1，先运行 Planner、批准假规格，再只执行阶段 1。",
+      "expected": "规划与审批针对的源码基线，应与创建的 worktree 基线一致；不同则重规划或拒绝。",
+      "actual": "Planner HEAD 与 worktree HEAD 不同，状态仍为 stage=2 READY。",
+      "recommendation": "初始化时解析并冻结 base_ref 为不可变 SHA；Planner 对该快照规划，建工作树时强制比对。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_planner_and_worktree_can_use_different_commits",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 42
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 247
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/gitops.py",
+          "line": 75
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-010",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/contracts.py",
+      "line": 75,
+      "claim": "矩阵为本地角色指定其他已登记节点时，执行器仍在本机执行并记为合规。",
+      "evidence": "validate_matrix 只要求 node 存在于 nodes；invoke 无节点路由或当前执行主机身份校验，直接本地 subprocess.run。",
+      "reproduction": "运行 test_nonlocal_assignment_is_executed_by_local_stub：离线假审批矩阵把 Planner 节点改为 5bao，实际只运行本地 Python 假包装器。",
+      "expected": "本机角色只接受本机获批节点；执行身份与批准矩阵不符须阻断。",
+      "actual": "记录的 node=5bao，本地 stub 运行，audit=COMPLIANT；没有连接 5bao。",
+      "recommendation": "校验本地角色节点策略，并用可信运行器返回的独立物理身份与矩阵比对；不支持的节点拒绝。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_nonlocal_assignment_is_executed_by_local_stub",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/executor.py",
+          "line": 46
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/executor.py",
+          "line": 69
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-011",
+      "category": "reproduced_code_defect",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/contracts.py",
+      "line": 118,
+      "claim": "12 份空 Soul 文件可以被当作有效角色契约冻结。",
+      "evidence": "snapshot_inputs 仅检查各角色文件存在并计算 SHA；未验证内容非空、受控版本或与角色契约一致。",
+      "reproduction": "运行 test_empty_souls_are_accepted_as_role_contracts：传入 12 个空 markdown 文件。",
+      "expected": "角色必须使用已认可且内容有效的 Soul，并可验证执行器确实加载。",
+      "actual": "初始化成功，Planner 离线阶段进入 Gate 0.2 WAITING_APPROVAL。",
+      "recommendation": "将批准的 Soul 清单/摘要纳入受信输入并验证角色内容；真实运行器提供已加载 Soul 的可信证据。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_empty_souls_are_accepted_as_role_contracts",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 26
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/executor.py",
+          "line": 47
+        }
+      ],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-012",
+      "category": "reproduced_code_defect",
+      "severity": "P2",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+      "line": 189,
+      "claim": "并行审查中第一份审查不合规时，第二份审查的独立审计记录未写入 audit_history。",
+      "evidence": "对 results 按顺序逐项 _audit_record，遇第一份 errors 即 return；另一份 audit 虽保存在 runs.details，但缺独立 audit_history 与对应审计文件。",
+      "reproduction": "运行 test_failed_first_reviewer_omits_second_audit_history：Spec 每轮返回错误 commit，Quality 每轮正常。",
+      "expected": "两个 Reviewer 每轮均应保留独立合规记录，即使其中一人失败。",
+      "actual": "Quality 运行 3 次，runs 内有 3 份 COMPLIANT，audit_history 中 Quality 审计为 0。",
+      "recommendation": "先完整记录两份审核及合规结果，再统一判定回退和重试。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_failed_first_reviewer_omits_second_audit_history",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 175
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 99
+        }
+      ],
+      "original_severity": "MEDIUM"
+    },
+    {
+      "id": "P1-013",
+      "category": "reproduced_code_defect",
+      "severity": "P2",
+      "file": "experiments/hermes-coding-pipeline-p1/p1/cli.py",
+      "line": 58,
+      "claim": "流水线状态为 FAILED 时 run 命令仍以进程退出码 0 结束，容易被外部调度误判。",
+      "evidence": "CLI 对 run/resume 输出 result JSON 后无条件 return 0；任务失败只存在 JSON status 中。",
+      "reproduction": "运行 test_budget_persists_across_pipeline_reopen：在新 Python 进程中继续三个已使用预算的任务至 FAILED。",
+      "expected": "失败和需要人工处理的状态应有明确、可机器判读且不易误用的 CLI 退出码契约。",
+      "actual": "三种 FAILED JSON 的 CLI 进程退出码均为 0。",
+      "recommendation": "为 FAILED/NEEDS_RECONCILIATION 等定义非零退出码，或明确规定调用方必须解析 status 并提供易用的检查接口。",
+      "verification": "离线实测；未调用真实模型或远端节点",
+      "test": "test_budget_persists_across_pipeline_reopen",
+      "related_locations": [
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/cli.py",
+          "line": 46
+        },
+        {
+          "file": "experiments/hermes-coding-pipeline-p1/p1/workflow.py",
+          "line": 200
+        }
+      ],
+      "original_severity": "MEDIUM"
+    }
+  ],
+  "known_integration_gaps": [
+    {
+      "id": "P1-G01",
+      "category": "known_unintegrated_capability",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 6,
+      "claim": "Gate 0.1/0.2 尚未接入可信人工审批身份。",
+      "evidence": "Gate 0.1 只比较元数据与哈希；Gate 0.2 接受非空 actor 和 approval_id。",
+      "reproduction": "阅读 p1/contracts.py:94 和 p1/workflow.py:362；组合离线假运行器用假 actor 进入后续阶段。",
+      "expected": "仅受信人工审批服务能够生成和验证对应批准。",
+      "actual": "当前身份仅为调用方可填字符串；未验证真实用户身份。",
+      "recommendation": "接入 Hermes/P2 可信审批记录并绑定规格、任务和来源；集成前阻断。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-G02",
+      "category": "known_unintegrated_capability",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 5,
+      "claim": "真实 Codex/OpenCode 适配器、实际模型与 Magpie 原始来源尚未接入验收。",
+      "evidence": "模板中 executor 明确 disabled；代码将请求的 assignment 写入记录，未独立证明实际模型。",
+      "reproduction": "阅读 p1/executor.py:38、p1/workflow.py:140、config/adapters.template.json:17。",
+      "expected": "实际 Harness、模型、Soul 和原始网关记录应可独立核验。",
+      "actual": "本轮只运行本机离线假包装器，真实身份和模型均未核实。",
+      "recommendation": "实现并验收可信 wrapper、真实会话关联及 Magpie 原始日志核验。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-G03",
+      "category": "known_unintegrated_capability",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 7,
+      "claim": "P0 A2A 真正物理身份、原始盲审来源与远端对账尚无已验收接口。",
+      "evidence": "P0 接口文档列出待确认项；现有 Boolean 验证已在 P1-001 复现可伪造。",
+      "reproduction": "阅读 docs/A2A_INTERFACE_REQUEST.md:13 和 p1/a2a.py:61。",
+      "expected": "至少两台受信不同物理机器的原始报告与身份需独立验证。",
+      "actual": "没有接触真实节点；当前字段不能证明真实物理隔离。",
+      "recommendation": "与独立 P0 会话确定可信身份和原文签名契约，未验收前真实模式 fail closed。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-G04",
+      "category": "known_unintegrated_capability",
+      "severity": "P0",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 11,
+      "claim": "副作用 kill switch 仅为人工声明占位。",
+      "evidence": "_phase_worktree 检查 live_side_effects_disabled 与 reviewed_by，并不检查应用内实际 kill guard。",
+      "reproduction": "阅读 p1/workflow.py:240 和 config/safety.template.json:2。",
+      "expected": "运行真实 Worker/测试前有任务级真实副作用阻断并完成验证。",
+      "actual": "本轮没有触碰生产配置，也没有证明生产副作用已关闭。",
+      "recommendation": "真实集成前实现任务级副作用清单和代码级 kill guard，并在隔离环境验证。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "BLOCKER"
+    },
+    {
+      "id": "P1-G05",
+      "category": "known_unintegrated_capability",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 8,
+      "claim": "外部调用异常后的主动安全对账尚未实现。",
+      "evidence": "RUNNING/不确定调用进入 NEEDS_RECONCILIATION；reconcile 只读输出，不能验证并恢复外部任务。",
+      "reproduction": "阅读 p1/workflow.py:377、416、426。",
+      "expected": "对真实 Harness/P0 支持按 job/idempotency key 安全查证，避免重派。",
+      "actual": "已有模拟崩溃状态的阻断测试；没有真实进程崩溃或远端任务对账验证。",
+      "recommendation": "实现按可信外部 job ID 查证、复核和人工决策的恢复协议。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "HIGH"
+    },
+    {
+      "id": "P1-G06",
+      "category": "known_unintegrated_capability",
+      "severity": "P1",
+      "file": "experiments/hermes-coding-pipeline-p1/docs/KNOWN_LIMITATIONS.md",
+      "line": 12,
+      "claim": "原始日志、会话流水和受 Git 管理的证据链尚未完成端到端对接。",
+      "evidence": "最终审计主要检查事件哈希、内存 audit_history 与报告哈希；文档承认证据 Git 与 Magpie 未完整集成。",
+      "reproduction": "阅读 p1/workflow.py:310 和 docs/KNOWN_LIMITATIONS.md:12。",
+      "expected": "真实流程的原始测试/角色日志和网关证据应可追溯并按要求纳管。",
+      "actual": "离线生成的 COMPLIANT 不证明真实调用或物证完整。",
+      "recommendation": "建立可信原始证据索引、会话绑定及仅写 audit_evidence 的受控归档。",
+      "verification": "文档与源码静态核查；未进行生产集成",
+      "test": null,
+      "related_locations": [],
+      "original_severity": "HIGH"
+    }
+  ],
+  "audit_status": "INCOMPLETE",
+  "severity_mapping": "P0=BLOCKER; P1=HIGH; P2=MEDIUM; P3=LOW",
+  "checkpoint_pending": "待核实并行复核新增事项，补全各段检查及最终复审。"
+}

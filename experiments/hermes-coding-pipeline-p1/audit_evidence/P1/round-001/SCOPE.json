@@ -1,0 +1,32 @@
+{
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "13d282596b9afee734996bb7a28ece1ace97c537",
+  "audit_started_at": "2026-11-04T13:52:21+08:00",
+  "audit_completed_at": null,
+  "source_root": "experiments/hermes-coding-pipeline-p1/",
+  "test_mode": "offline_fixture + local stubbed integration paths; network Git protocol disabled during tests; test-copy fixture adapted",
+  "auditor_identifier": "Hermes ling, independent P1 code-audit agent, group/gpt-6.1-terra via Magpie",
+  "verdict": "FAIL",
+  "real_21bao_integration_allowed": false,
+  "next_action": "离线整改并进行新一轮独立复审",
+  "file_scope": "P1 目录内全部受版本管理源码、配置模板、文档、12 份 Soul 和测试；不涉及现网配置或远端节点",
+  "source_clean_at_audit": true,
+  "test_environment": {
+    "os": "Windows 10",
+    "python": "3.11.15",
+    "pytest": "9.1.0",
+    "git": "2.54.0.windows.1"
+  },
+  "baseline_test_files": 18,
+  "baseline_fixture_adaptation": "测试副本将临时 git init/add/commit 改为克隆现成本地隔离 Git fixture；业务模块和 test_pipeline.py 哈希与审计源码一致",
+  "distinct_custom_probe_cases": 19,
+  "external_network_or_real_a2a_used_in_tests": false,
+  "audit_status": "INCOMPLETE",
+  "checkpoint_at": "2026-11-04T14:52:28+08:00",
+  "incomplete_items": [
+    "核实并行复核提出的审批竞态、状态完整性、暂存区与 Tester SHA 基线等新增问题",
+    "完成各分段检查与报告最终交叉校验",
+    "真实生产服务、真实模型、远端节点不在本轮范围，均为 NOT_VERIFIED"
+  ]
+}
