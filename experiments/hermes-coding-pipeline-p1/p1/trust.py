@@ -97,7 +97,19 @@ def validate_private_task_home(home: Path, *, require_database: bool) -> None:
     home = Path(home).absolute()
     paths = [home]
     if require_database:
-        paths.append(home / 'state.sqlite')
+        database = home / 'state.sqlite'
+        paths.append(database)
+        # SQLite WAL files are part of the ledger, not disposable caches. A
+        # pre-existing WAL or SHM can have a separately granted DACL even when
+        # its parent directory is private. Inspect them if present.
+        paths.extend(path for path in
+                     (home / 'state.sqlite-wal', home / 'state.sqlite-shm')
+                     if path.exists() or path.is_symlink())
+    # Evidence and input folders are state too. Check each existing directory
+    # independently: a child DACL may not match the protected home DACL.
+    paths.extend(path for path in
+                 (home / 'snapshots', home / 'logs', home / 'artifacts',
+                  home / 'audit_evidence') if path.exists() or path.is_symlink())
     for path in paths:
         if not path.exists() or path.is_symlink():
             raise TrustBoundaryError('private task state path missing or linked')

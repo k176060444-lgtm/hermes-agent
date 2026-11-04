@@ -39,9 +39,26 @@ def test_r4_002_test_filename_with_spaces_and_tabs(scenario):
         p.approve_spec('user','approved',s['spec_sha'])
         p.run(max_steps=1)
         repo=s['worktree'];old=gitops.head(repo)
-        fname='test_空\t格.py'
+        fname='test_空 格.py'  # Works on Windows and POSIX; tab is tested separately.
         (repo/'tests'/fname).write_text('def test_ok(): assert True\n',encoding='utf-8')
         _git_commit(repo,'unicode with spaces')
+        good,delta=gitops.test_commit_transition(repo,old,gitops.head(repo))
+        assert good and delta==['A\ttests/'+fname],delta
+    finally:p.close()
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Windows filenames cannot contain tabs')
+def test_r4_002_posix_tab_filename(scenario):
+    s=scenario;s['init']()
+    p=Pipeline(s['home'])
+    try:
+        p.run(max_steps=1)
+        p.approve_spec('user','approved',s['spec_sha'])
+        p.run(max_steps=1)
+        repo=s['worktree'];old=gitops.head(repo)
+        fname='test_空\t格.py'
+        (repo/'tests'/fname).write_text('def test_ok(): assert True\n',encoding='utf-8')
+        _git_commit(repo,'test tab name POSIX only')
         good,delta=gitops.test_commit_transition(repo,old,gitops.head(repo))
         assert good and delta==['A\ttests/'+fname],delta
     finally:p.close()

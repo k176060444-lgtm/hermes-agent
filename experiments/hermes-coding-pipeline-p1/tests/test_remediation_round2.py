@@ -231,20 +231,19 @@ def test_round2_partial_db_creation_is_cleaned_before_retry(scenario,monkeypatch
     assert (s["home"]/"state.sqlite").exists()
 
 
-def test_round2_executor_ignores_mutable_task_adapter_pointer(scenario,monkeypatch):
+def test_round2_executor_refuses_local_adapter_even_when_flag_is_set(scenario,monkeypatch):
     import p1.executor as ex
     s=scenario;s["init"]()
-    trusted=s["home"]/"snapshots"/"adapters.json"
+    trusted=s["home"] / "snapshots" / "adapters.json"
     runner=canonical({"harnesses":{"codex":{
-        "argv":[sys.executable,"-c","print('\\\"TRUSTED\\\"')"],
+        "argv":[sys.executable,"-c","print('\"TRUSTED\"')"],
         "explicitly_authorized":True}}})+"\n"
     atomic_write(trusted,runner)
     task={"mode":"integration","task_id":"TEST-001","project_root":str(s["project"]),
           "worktree_path":str(s["project"]),"adapter_config":"/local/unapproved.json",
           "adapter_sha256":digest_file(trusted)}
     monkeypatch.setattr(ex,"TRUSTED_INTEGRATION_EXECUTION_VERIFIED",True)
-    # The deliberately incomplete fixture returns a JSON string, not a dict.
-    # Reaching the envelope type check proves the attacker-controlled pointer
-    # was not consulted; it never attempts opening /local/unapproved.json.
-    with pytest.raises(ex.InvocationError,match="envelope must be a JSON object"):
+    # Even if a stale flag is toggled by mistake, in-process subprocess calls
+    # are forbidden until a separately authenticated identity runner exists.
+    with pytest.raises(ex.InvocationError,match="separate-identity Agent runner"):
         ex.invoke(task,"planner","0.2",s["home"],1,903)

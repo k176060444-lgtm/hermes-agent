@@ -120,6 +120,13 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
     # Never call a paid model and then treat its self-reported JSON as evidence.
     if not TRUSTED_INTEGRATION_EXECUTION_VERIFIED:
         raise InvocationError("integration execution disabled: trusted Harness provenance and test attestation are NOT_VERIFIED")
+    # subprocess.Popen would inherit the orchestrator's security identity and
+    # could read/write its ledger. P1 does not implement a separately
+    # authenticated runner service yet; an adapter JSON boolean cannot stand
+    # in for a verified Windows token or external trusted execution receipt.
+    # This independent gate must be replaced only after Stage-2 implements
+    # and audits a real isolated-identity runner protocol.
+    raise InvocationError("NOT_VERIFIED: no authenticated separate-identity Agent runner is installed")
     adapter_file=task_root/"snapshots"/"adapters.json"
     if (not task.get("adapter_sha256") or not adapter_file.is_file() or
             digest_file(adapter_file)!=task["adapter_sha256"]):
@@ -160,7 +167,8 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
         raise InvocationError(f"trusted runner could not start: {type(exc).__name__}") from exc
     out=logs/f"{run_id}.stdout.bin"; err=logs/f"{run_id}.stderr.bin"
     atomic_write(out,outcome.stdout); atomic_write(err,outcome.stderr)
-    atomic_write(logs/f"{run_id}.capture.json", canonical({
+    capture_file = logs / f"{run_id}.capture.json"
+    atomic_write(capture_file, canonical({
         **capture, "stdout_sha256":digest_file(out), "stderr_sha256":digest_file(err)})+"\n")
     if capture["timed_out"]:
         atomic_write(logs/f"{run_id}.timeout.json", canonical({
@@ -177,4 +185,7 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
         raise InvocationError("runner stdout is not one valid UTF-8 JSON result envelope") from exc
     if not isinstance(payload,dict):
         raise InvocationError("runner envelope must be a JSON object")
-    return {"payload":payload,"mode":"integration","exit_code":outcome.returncode,"stdout_sha256":digest_file(out),"stderr_sha256":digest_file(err),"assignment":assignment,"command":argv,"run_id":run_id}
+    return {"payload":payload,"mode":"integration","exit_code":outcome.returncode,
+            "stdout_sha256":digest_file(out),"stderr_sha256":digest_file(err),
+            "capture_sha256":digest_file(capture_file),
+            "assignment":assignment,"command":argv,"run_id":run_id}

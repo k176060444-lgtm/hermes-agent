@@ -264,6 +264,13 @@ class Pipeline:
             audit["verdict"]="NON_COMPLIANT"
         log_info={"stdout":stdout.name,"stdout_sha256":digest_file(stdout) if stdout.is_file() else None,
                   "stderr":stderr.name,"stderr_sha256":digest_file(stderr) if stderr.is_file() else None}
+        if envelope["mode"]=="integration":
+            capture_file=task_root/"logs"/f"{run_id}.capture.json"
+            if not capture_file.is_file() or envelope.get("capture_sha256")!=digest_file(capture_file):
+                audit["errors"].append("trusted invocation capture metadata missing/mismatched")
+                audit["verdict"]="NON_COMPLIANT"
+            log_info["capture"]=capture_file.name
+            log_info["capture_sha256"]=digest_file(capture_file) if capture_file.is_file() else None
         report_entry=None
         if isinstance(payload.get("report"),str) and payload["report"].strip():
             name=f"{run_id:04d}_{stage.replace('.','_')}_{role}.md"
@@ -280,6 +287,8 @@ class Pipeline:
                  "invocation":{key:envelope[key] for key in
                       ("mode","exit_code","stdout_sha256","stderr_sha256","command","assignment")},
                  "logs":log_info,"report":report_entry,"audit":audit,"payload":payload}
+        if envelope["mode"]=="integration":
+            details["invocation"]["capture_sha256"]=envelope.get("capture_sha256")
         self.store.finish_run(task["task_id"],run_id,"COMPLETED",output_sha,details)
         return payload,audit
 
@@ -523,7 +532,8 @@ class Pipeline:
                 if sha256(canonical(detail["payload"]).encode())!=run["output_sha"]:
                     problems.append(f"run output SHA mismatch: {run['id']}")
                 invocation=detail["invocation"]
-                for stream in ("stdout","stderr"):
+                streams=("stdout","stderr","capture") if invocation.get("mode")=="integration" else ("stdout","stderr")
+                for stream in streams:
                     info=detail["logs"]
                     rel=info[stream]
                     if Path(rel).name!=rel or not rel.startswith(f"{run['id']}."):
@@ -531,8 +541,15 @@ class Pipeline:
                         continue
                     path=self.root/"logs"/rel
                     expected=info[f"{stream}_sha256"]
-                    if not path.is_file() or digest_file(path)!=expected or invocation[f"{stream}_sha256"]!=expected:
+                    if not path.is_file() or digest_file(path)!=expected or invocation.get(f"{stream}_sha256")!=expected:
                         problems.append(f"raw role log SHA mismatch: {run['id']} {stream}")
+                if invocation.get("mode")=="integration":
+                    capture=read_json(self.root/"logs"/detail["logs"]["capture"])
+                    if (capture.get("stdout_sha256")!=detail["logs"]["stdout_sha256"] or
+                            capture.get("stderr_sha256")!=detail["logs"]["stderr_sha256"] or
+                            capture.get("timed_out") is True or
+                            capture.get("output_limit_exceeded") is True):
+                        problems.append(f"invalid role capture receipt: {run['id']}")
                 entry=detail.get("report")
                 if entry:
                     path=self.root/"artifacts"/entry["name"]

@@ -396,28 +396,27 @@ def test_p018_tester_cannot_replace_git_head_with_divergent_commit(scenario,monk
     finally:p.close()
 
 
-def test_p025_timeout_keeps_partial_stdout_stderr(scenario, monkeypatch):
-    """Actual isolated child process, not a mocked subprocess.run timeout."""
-    s=scenario;s["init"]()
-    import p1.executor as ex
-    monkeypatch.setattr(ex,"TRUSTED_INTEGRATION_EXECUTION_VERIFIED",True)
-    adapter=s["root"] / "adapters-timeout.json"
+def test_p025_timeout_keeps_partial_stdout_stderr(scenario):
+    """Exercise the bounded local capture helper; not trusted integration."""
+    s=scenario
+    from p1.executor import _capture_bounded
     code=("import sys,time;"
           "sys.stdout.buffer.write(b'PARTIAL-STDOUT');sys.stdout.flush();"
           "sys.stderr.buffer.write(b'PARTIAL-STDERR');sys.stderr.flush();"
           "time.sleep(10)")
-    adapter.write_text(canonical({"harnesses":{"codex":{"argv":[sys.executable,"-c",code],
-                            "explicitly_authorized":True,"timeout_seconds":1}}})+"\n")
-    from p1.contracts import atomic_write
-    frozen=s["home"] / "snapshots" / "adapters.json"
-    atomic_write(frozen,adapter.read_bytes())
-    task={"mode":"integration","adapter_config":str(frozen),"adapter_sha256":digest_file(frozen),
-          "task_id":"TEST-001","project_root":str(s["project"]),"worktree_path":str(s["project"])}
-    with pytest.raises(ex.InvocationError, match="timed out"):
-        ex.invoke(task,"planner","0.2",s["home"],1,901)
-    assert (s["home"]/"logs"/"901.stdout.bin").read_bytes()==b"PARTIAL-STDOUT"
-    assert (s["home"]/"logs"/"901.stderr.bin").read_bytes()==b"PARTIAL-STDERR"
-    meta=read_json(s["home"]/"logs"/"901.capture.json")
+    outcome,meta=_capture_bounded([sys.executable,"-c",code],s["project"],{},1)
+    assert outcome.stdout==b"PARTIAL-STDOUT"
+    assert outcome.stderr==b"PARTIAL-STDERR"
     assert meta["timed_out"] is True
     assert meta["stdout_truncated"] is False
-    assert (s["home"]/"logs"/"901.timeout.json").exists()
+
+
+def test_real_invoke_refuses_same_identity_local_runner_even_if_provenance_flag_set(scenario,monkeypatch):
+    s=scenario;s["init"]()
+    import p1.executor as ex
+    monkeypatch.setattr(ex,"TRUSTED_INTEGRATION_EXECUTION_VERIFIED",True)
+    task={"mode":"integration","task_id":"TEST-001", "project_root":str(s["project"]),
+          "worktree_path":str(s["project"])}
+    with pytest.raises(ex.InvocationError,match="separate-identity Agent runner"):
+        ex.invoke(task,"planner","0.2",s["home"],1,901)
+    assert not list((s["home"]/"logs").glob("901.*"))

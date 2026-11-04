@@ -101,3 +101,11 @@ provenance signature. New `p1/trust.py` enforces a real-mode private OS account
 ownership boundary for P1 state; this is explicitly a trust-domain policy, not
 protection against malicious code with the orchestrator's own OS identity.
 See `docs/ROUND_004_REMEDIATION.md`. Real model execution remains hard-disabled.
+
+### Current Round-006 candidate (not a live release)
+
+Round-005 was `CONDITIONAL`. This source revision addresses R5-001 to R5-004
+as offline/Windows-test candidates and independently blocks ordinary
+same-identity Agent subprocess invocation (R5-005 remains `MITIGATED_FAIL_CLOSED`,
+**not FIXED**). See `docs/ROUND_005_REMEDIATION.md` and
+`prompts/ROUND006_AUDIT_PROMPT.md`. Real 21bao coding tasks stay disabled.

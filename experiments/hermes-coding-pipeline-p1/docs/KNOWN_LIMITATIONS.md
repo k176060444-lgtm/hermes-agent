@@ -43,3 +43,14 @@ See `ROUND_002_REMEDIATION.md`. Gate0.1 now requires a `souls_sha256` fingerprin
 - **R2-008:** Direct-child stdout/stderr now have bounded capture and evidence
   metadata. Real Windows descendant-process cleanup is still NOT_VERIFIED.
 - **R2-006:** External A2A wire receipts and physical identity remain fail closed.
+
+### Round-005 remediation candidate (independent Round-006 audit pending)
+
+See `ROUND_005_REMEDIATION.md`. Windows-specific DACL unit tests have been
+added but not executed on 21bao by the developer; the Stage-2 requirement for
+a dedicated independent runner OS identity remains **NOT_VERIFIED**, and a
+plain local subprocess remains forcibly disabled even if the old provenance
+Boolean were toggled. The task ledger's hash chain does not prove that the
+trusted OS account itself was uncompromised. WAL/SHM paths and run capture
+metadata have additional local checks. External P0 transport receipts and
+real agent/test/approval provenance remain unavailable.
