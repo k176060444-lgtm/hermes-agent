@@ -41,6 +41,37 @@ class CodexProbeError(RuntimeError):
     pass
 
 
+# Strict allowlist for matrix extra_argv (S2B1-008): ONLY these exact tokens
+# may appear. Anything else - including reserved overrides (-m/--model,
+# -s/--sandbox, -C/--cd, --json, --config, sandbox bypass switches) and
+# unknown flags - is rejected. Values are not accepted either: extra_argv is
+# boolean flags only.
+EXTRA_ARGV_ALLOWLIST = {"--ephemeral"}
+
+_RESERVED_TOKENS = {"-m", "--model", "-s", "--sandbox", "-C", "--cd",
+                    "--json", "--config", "--dangerously-bypass-approvals-and-sandbox",
+                    "--output-last-message", "--output-schema"}
+
+
+def check_extra_argv(extra: list, *, allowlist: set | None = None,
+                     reserved: set | None = None,
+                     error: type[Exception] | None = None) -> None:
+    """Shared strict allowlist check for both adapters. Raises the adapter
+    error class on any violation."""
+    error = error or CodexProbeError
+    allowed = EXTRA_ARGV_ALLOWLIST if allowlist is None else set(allowlist)
+    reserved = _RESERVED_TOKENS if reserved is None else set(reserved)
+    for item in extra:
+        if not isinstance(item, str) or not item.startswith("-"):
+            raise error(f"extra_argv must be allowlisted boolean flags, got {item!r}")
+        if item in reserved:
+            raise error(f"extra_argv may not override reserved flag {item!r}")
+        if item not in allowed:
+            raise error(
+                f"extra_argv flag {item!r} is not in the strict allowlist "
+                f"{sorted(allowed)}; approval matrix must be re-issued")
+
+
 def _text(run_result) -> str:
     return (run_result.stdout or "") + (run_result.stderr or "")
 
@@ -94,6 +125,7 @@ def build_command(*, frozen_entry: dict, matrix_entry: dict, request: dict,
         raise CodexProbeError("matrix entry must approve primary_model and sandbox_mode")
     if not isinstance(extra, list) or any(not isinstance(x, str) for x in extra):
         raise CodexProbeError("matrix extra_argv must be a list of strings")
+    check_extra_argv(extra)  # S2B1-008: strict allowlist, no override path
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     last_msg = out_dir / f"{request['run_id']}.last-message.txt"
@@ -101,7 +133,7 @@ def build_command(*, frozen_entry: dict, matrix_entry: dict, request: dict,
             "-m", model, "-s", sandbox,
             "-C", str(Path(worktree).resolve()),
             "--output-last-message", str(last_msg)]
-    argv += [item.format(run_dir=str(out_dir), run_id=request["run_id"]) for item in extra]
+    argv += list(extra)
     argv.append("-")  # instructions/prompt from stdin
     stdin_text = soul_text.rstrip() + "\n\n" + prompt_text.rstrip() + "\n"
     return {"argv": argv, "stdin_text": stdin_text,
@@ -157,6 +189,7 @@ def extract_session_ref(events: list) -> dict:
 def extract_command_evidence(events: list) -> list:
     """CLI-self-reported command activity. Every record: trusted=False."""
     records = []
+    ordinal = 0
     for event in events:
         raw = event.get("raw") or {}
         candidates = [raw, raw.get("msg") or {}, raw.get("item") or {}]
@@ -167,29 +200,56 @@ def extract_command_evidence(events: list) -> list:
             if isinstance(command, str) and command:
                 records.append({
                     "command": command,
+                    "ordinal": ordinal,
                     "claimed_exit": candidate.get("exit_code", candidate.get("exit")),
                     "source": "cli-event-self-report",
                     "trusted": False,
                 })
+                ordinal += 1
                 break
     return records
 
 
-def merge_runner_records(claimed: list, runner_records: list) -> list:
-    """Upgrade claimed evidence ONLY on exact command agreement with the
-    runner-recorded observation (pid-level wrapper capture)."""
-    by_command: dict[str, dict] = {}
-    for record in runner_records or []:
-        if isinstance(record, dict) and isinstance(record.get("command"), str):
-            by_command[record["command"]] = record
+def merge_runner_records(claimed: list, runner_records: list, *,
+                         runner_attestation: dict | None = None) -> list:
+    """Upgrade claimed evidence ONLY on exact per-invocation agreement with
+    runner-recorded observations, and ONLY when the caller supplies a live
+    ``runner_attestation`` produced by runner.verify_execution_identity
+    (attested=True, not a test seam). Without that attestation every record
+    stays trusted=False and is marked as awaiting Stage-2B-2 authentication -
+    there is no real runner yet, so simulated 'trusted' results are
+    impossible by construction (S2B1-009).
+
+    Matching is per-invocation: each runner record is consumed at most once
+    and is paired with the claimed entry of the SAME ordinal, so one receipt
+    record can never validate two different invocations of the same command.
+    """
+    attested = bool(runner_attestation and runner_attestation.get("attested") is True
+                    and not runner_attestation.get("test_seam"))
+    by_ordinal: dict[int, dict] = {}
+    if attested:
+        for record in runner_records or []:
+            if isinstance(record, dict) and isinstance(record.get("command"), str) \
+                    and isinstance(record.get("ordinal"), int):
+                by_ordinal[record["ordinal"]] = record
     merged = []
+    consumed: set[int] = set()
     for item in claimed:
-        match = by_command.get(item["command"])
         entry = dict(item)
-        if match is not None and match.get("exit_code") == item.get("claimed_exit"):
-            entry["trusted"] = True
-            entry["source"] = "runner-observed-agreement"
+        entry["promotion_blocked"] = None if attested else \
+            "no authenticated runner attestation (awaiting Stage-2B-2)"
+        ordinal = item.get("ordinal")
+        match = by_ordinal.get(ordinal) if isinstance(ordinal, int) else None
+        if match is None and isinstance(ordinal, int) and attested:
+            entry["no_matching_runner_record"] = True
+        if match is not None and ordinal not in consumed:
+            if match.get("exit_code") == item.get("claimed_exit"):
+                entry["trusted"] = True
+                entry["source"] = "runner-observed-agreement"
+                consumed.add(ordinal)
+            else:
+                entry["contradiction"] = True
         elif match is not None:
-            entry["contradiction"] = True
+            entry["contradiction"] = True  # record already consumed once
         merged.append(entry)
     return merged

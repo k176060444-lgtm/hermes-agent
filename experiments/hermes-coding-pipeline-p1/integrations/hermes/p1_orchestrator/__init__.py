@@ -1,14 +1,20 @@
 """p1_orchestrator — DRAFT Hermes plugin (uninstalled, audit-only).
 
+Remediated after the Stage-2B-1 independent audit:
+* bounded capture: subprocess output is pumped with a hard per-stream cap at
+  COLLECTION time (S2B1-012), not truncated after an unbounded read;
+* p1_init forwards every required CLI flag (S2B1-011);
+* p1_approve_spec FAILS CLOSED (supplementary security review): the
+  `hermes-unverified:` provenance only records an UNVERIFIED session origin.
+  It is NOT a verified human approval identity, and while that binding is
+  missing this handler must not be able to trigger a real Gate 0.2 approval.
+  The gap "gateway-integrated approval identity binding" stays open and is
+  tracked as NOT_VERIFIED for Stage-2B-2.
+
 Hermes remains the only Orchestrator; this surface merely shells the audited
 `python -m p1` CLI. Every handler:
 * refuses until p1_repo_dir is an explicitly configured absolute path,
-* never runs `pip install`, never touches live profiles/gateways,
-* enforces structured approval provenance for approve-spec: a bare nickname
-  string is NOT an approval credential. Message-level identity verification
-  remains an open Stage-2 item; provenance is recorded as
-  `hermes-unverified:{platform}:{chat_id}:{message_ref}` so ledgers always
-  show the trust state.
+* never runs `pip install`, never touches live profiles/gateways.
 """
 from __future__ import annotations
 
@@ -16,10 +22,12 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 TOOLSET = "p1"
 _TIMEOUT = 900
+_STREAM_CAP_BYTES = 1 * 1024 * 1024  # S2B1-012: bounded at collection time
 
 _COMMANDS = {
     "p1_init": "init",
@@ -30,6 +38,12 @@ _COMMANDS = {
     "p1_audit": "audit",
     "p1_export": "export",
 }
+
+# CLI `init` requires all of these flags (p1/cli.py); the plugin schema and
+# the handler must forward them all (S2B1-011).
+_INIT_REQUIRED = ("task_id", "intent", "matrix", "gate01", "souls",
+                  "project_root", "worktree")
+_INIT_OPTIONAL = ("mode", "fixtures", "adapters", "safety_manifest", "base_ref")
 
 
 class ConfigError(RuntimeError):
@@ -53,18 +67,68 @@ def _python(config: dict) -> str:
     return raw
 
 
+def _pump(stream, sink: list, cap: int, state: dict) -> None:
+    """Read a subprocess stream in chunks, keeping at most ``cap`` bytes;
+    everything beyond the cap is drained and DISCARDED so memory stays
+    bounded even for a runaway child (S2B1-012)."""
+    kept = 0
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            if kept < cap:
+                room = cap - kept
+                sink.append(chunk[:room])
+                kept += len(chunk[:room])
+            if kept >= cap:
+                state["truncated"] = True  # keep draining, discard the rest
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
 def _invoke(config: dict, command: str, args: list) -> dict:
     argv = [_python(config), "-B", "-m", "p1", command, *args]
-    result = subprocess.run(argv, cwd=str(_repo_dir(config)), capture_output=True,
-                            text=True, errors="replace", timeout=_TIMEOUT)
+    proc = subprocess.Popen(argv, cwd=str(_repo_dir(config)),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out_chunks: list = []
+    err_chunks: list = []
+    out_state: dict = {}
+    err_state: dict = {}
+    threads = [
+        threading.Thread(target=_pump, args=(proc.stdout, out_chunks,
+                                             _STREAM_CAP_BYTES, out_state)),
+        threading.Thread(target=_pump, args=(proc.stderr, err_chunks,
+                                             _STREAM_CAP_BYTES, err_state)),
+    ]
+    for thread in threads:
+        thread.daemon = True
+        thread.start()
+    try:
+        proc.wait(timeout=_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    for thread in threads:
+        thread.join(timeout=10)
+    stdout = b"".join(out_chunks).decode("utf-8", errors="replace")
+    stderr = b"".join(err_chunks).decode("utf-8", errors="replace")
     payload: dict = {}
-    if result.stdout.strip():
+    if stdout.strip():
         try:
-            payload = json.loads(result.stdout)
+            payload = json.loads(stdout)
         except ValueError:
-            payload = {"stdout": result.stdout}
-    return {"exit_code": result.returncode, "result": payload,
-            "stderr": result.stderr.strip()[:500]}
+            payload = {"stdout": stdout}
+    if out_state.get("truncated"):
+        payload["_stdout_truncated"] = True
+        payload["_stdout_cap_bytes"] = _STREAM_CAP_BYTES
+    return {"exit_code": proc.returncode, "result": payload,
+            "stderr": stderr[:500],
+            "_stderr_truncated": bool(err_state.get("truncated"))}
 
 
 def _require_home(args: dict) -> list:
@@ -74,7 +138,25 @@ def _require_home(args: dict) -> list:
     return ["--home", str(home)]
 
 
+def _init_handler(args: dict, config: dict) -> dict:
+    """Forward EVERY required init flag (S2B1-011)."""
+    argv = _require_home(args)
+    for key in _INIT_REQUIRED:
+        value = args.get(key)
+        if not value or not str(value).strip():
+            raise ConfigError(f"p1_init requires {key!r}")
+        argv += ["--" + key.replace("_", "-"), str(value)]
+    for key in _INIT_OPTIONAL:
+        if args.get(key):
+            argv += ["--" + key.replace("_", "-"), str(args[key])]
+    return _invoke(config, "init", argv)
+
+
 def handle_approve_spec(args: dict, config: dict) -> dict:
+    """Approval provenance records an UNVERIFIED session origin; it is NOT a
+    verified approval identity. Until a trusted session-identity binding
+    exists (Stage-2B-2 acceptance item), this handler must NOT be able to
+    trigger a real Gate 0.2 approval - fail closed (supplementary review)."""
     provenance = args.get("provenance") or {}
     for key in ("platform", "chat_id", "message_ref"):
         if not str(provenance.get(key, "")).strip():
@@ -84,17 +166,21 @@ def handle_approve_spec(args: dict, config: dict) -> dict:
     handle = str(args.get("actor", "")).strip()
     if not handle:
         raise ConfigError("actor handle required (recorded, not trusted)")
-    approval_id = "hermes-unverified:{}:{}:{}".format(
-        provenance["platform"], provenance["chat_id"], provenance["message_ref"])
     spec_sha = str(args.get("spec_sha256", ""))
     if len(spec_sha) != 64:
         raise ConfigError("spec_sha256 must be a full sha256 hex")
-    argv = _require_home(args) + ["--actor", handle, "--approval-id", approval_id,
-                                  "--spec-sha256", spec_sha]
-    out = _invoke(config, "approve-spec", argv)
-    out["approval_provenance"] = dict(provenance, actor_handle=handle,
-                                      identity_verified=False)
-    return out
+    approval_id = "hermes-unverified:{}:{}:{}".format(
+        provenance["platform"], provenance["chat_id"], provenance["message_ref"])
+    # FAIL CLOSED: do not invoke the CLI approval path. The identity behind
+    # this provenance has never been verified.
+    return {"exit_code": None, "status": "BLOCKED",
+            "result": {"approved": False},
+            "approval_provenance": dict(provenance, actor_handle=handle,
+                                        identity_verified=False),
+            "approval_id": approval_id,
+            "reason": ("approval identity is UNVERIFIED; triggering Gate 0.2 "
+                       "from an unverified session origin is refused "
+                       "(fail-closed, Stage-2B-2 must bind verified identity)")}
 
 
 _SCHEMAS = {
@@ -139,6 +225,9 @@ def _simple_handler(command: str):
     return handler
 
 
+_HANDLERS = {"init": _init_handler, "approve-spec": handle_approve_spec}
+
+
 def register(ctx) -> None:
     """Register the draft tool surface on a Hermes plugin context.
 
@@ -146,10 +235,7 @@ def register(ctx) -> None:
     can verify the exact future shape (same ctx.register_tool pattern as the
     a2a/google_meet plugins)."""
     for name, command in _COMMANDS.items():
-        if command == "approve-spec":
-            handler = handle_approve_spec
-        else:
-            handler = _simple_handler(command)
+        handler = _HANDLERS.get(command) or _simple_handler(command)
         ctx.register_tool(
             name=name, toolset=TOOLSET, schema=_SCHEMAS[name],
             description=f"P1 {command} (draft; uninstalled)",

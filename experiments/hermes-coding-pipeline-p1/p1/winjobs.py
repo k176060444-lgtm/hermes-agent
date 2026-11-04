@@ -74,8 +74,98 @@ def _kernel():
         kernel.GetExitCodeProcess.restype = wintypes.BOOL
         kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE,
                                               ctypes.POINTER(wintypes.DWORD)]
+        kernel.CreateProcessW.restype = wintypes.BOOL
+        kernel.CreateProcessW.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_void_p, ctypes.c_void_p,
+            wintypes.BOOL, wintypes.DWORD, ctypes.c_void_p, wintypes.LPCWSTR,
+            ctypes.c_void_p, ctypes.c_void_p]
+        kernel.ResumeThread.restype = wintypes.DWORD
+        kernel.ResumeThread.argtypes = [wintypes.HANDLE]
+        kernel.TerminateProcess.restype = wintypes.BOOL
+        kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
         kernel._p1_jobs_configured = True
     return kernel
+
+
+class _StartupInfoW(ctypes.Structure):
+    _fields_ = [("cb", wintypes.DWORD),
+                ("lpReserved", wintypes.LPWSTR),
+                ("lpDesktop", wintypes.LPWSTR),
+                ("lpTitle", wintypes.LPWSTR),
+                ("dwX", wintypes.DWORD),
+                ("dwY", wintypes.DWORD),
+                ("dwXSize", wintypes.DWORD),
+                ("dwYSize", wintypes.DWORD),
+                ("dwXCountChars", wintypes.DWORD),
+                ("dwYCountChars", wintypes.DWORD),
+                ("dwFillAttribute", wintypes.DWORD),
+                ("dwFlags", wintypes.DWORD),
+                ("wShowWindow", wintypes.WORD),
+                ("cbReserved2", wintypes.WORD),
+                ("lpReserved2", ctypes.c_void_p),
+                ("hStdInput", wintypes.HANDLE),
+                ("hStdOutput", wintypes.HANDLE),
+                ("hStdError", wintypes.HANDLE)]
+
+
+class _ProcessInformation(ctypes.Structure):
+    _fields_ = [("hProcess", wintypes.HANDLE),
+                ("hThread", wintypes.HANDLE),
+                ("dwProcessId", wintypes.DWORD),
+                ("dwThreadId", wintypes.DWORD)]
+
+
+CREATE_SUSPENDED = 0x00000004
+_CREATE_UNICODE_ENV = 0x00000400
+_STILL_ACTIVE = 259
+_INVALID_HANDLE = ctypes.c_void_p(-1).value or 0
+
+
+def _quote_command(argv: list) -> str:
+    import subprocess as _sp
+    return _sp.list2cmdline([str(a) for a in argv])
+
+
+def create_suspended_in_job(job, argv: list, *, cwd: str | None = None) -> int:
+    """Spawn ``argv`` CREATE_SUSPENDED, assign it to ``job`` BEFORE its first
+    instruction runs, then resume. Any failure along the way kills the
+    suspended process and raises - the escape window of spawn-then-assign
+    (audit S2B1-016) is structurally closed because the process cannot create
+    descendants while suspended. NOTE: this helper runs the child under the
+    CALLER's identity; the dedicated agentx-identity launch path
+    (CreateProcessWithLogonW + pinned credentials) remains a Stage-2B-2
+    provisioning item and stays fail-closed/unimplemented."""
+    _require_nt()
+    kernel = _kernel()
+    command_line = _quote_command(argv)
+    si = _StartupInfoW()
+    si.cb = ctypes.sizeof(si)
+    pi = _ProcessInformation()
+    created = kernel.CreateProcessW(
+        None, ctypes.create_unicode_buffer(command_line), None, None, False,
+        CREATE_SUSPENDED | _CREATE_UNICODE_ENV, None,
+        ctypes.create_unicode_buffer(cwd) if cwd else None,
+        ctypes.byref(si), ctypes.byref(pi))
+    if not created:
+        raise RunnerAttestationError(
+            f"CreateProcessW(CREATE_SUSPENDED) failed for {argv[0]!r}")
+    pid = int(pi.dwProcessId)
+    try:
+        if not kernel.AssignProcessToJobObject(job.handle, pi.hProcess):
+            raise RunnerAttestationError(
+                f"AssignProcessToJobObject failed for pid {pid}")
+        if kernel.ResumeThread(pi.hThread) == 0xFFFFFFFF:
+            raise RunnerAttestationError(f"ResumeThread failed for pid {pid}")
+    except BaseException:
+        kernel.TerminateProcess(pi.hProcess, 1)
+        kernel.CloseHandle(pi.hThread)
+        kernel.CloseHandle(pi.hProcess)
+        raise
+    kernel.CloseHandle(pi.hThread)
+    kernel.CloseHandle(pi.hProcess)
+    return pid
 
 
 class Job:

@@ -81,12 +81,22 @@ def render_agent_markdown(*, role: str, model: str, soul_text: str,
     """Deterministic agent definition for one pipeline role.
 
     Front matter pins the approved model and a permission posture:
-    default deny for anything not explicitly allowed by the matrix entry;
-    ``auto`` approval is always denied (it would let the CLI self-approve).
+    default deny for anything not explicitly allowed by the matrix entry.
+    ``auto`` approval is ALWAYS denied (S2B1-010): a caller-supplied
+    permissions entry with any other ``auto`` value is rejected outright -
+    the CLI self-approval switch can never be rendered as allowed. The
+    rendered markdown declares intent only; whether the installed OpenCode
+    version actually ENFORCES these permission fields must be confirmed live
+    against the real CLI in Stage-2B-2 (NOT_VERIFIED here).
     """
     if not role or not model:
         raise OpenCodeProbeError("agent render needs role and approved model")
     perms = dict(permissions or {})
+    for key in DEFAULT_DENY_PERMISSIONS:
+        if key in perms and perms[key] != "deny":
+            raise OpenCodeProbeError(
+                f"permission {key!r} must stay 'deny'; self-approval "
+                f"({perms[key]!r}) is never renderable")
     lines = ["---",
              f"description: {description}",
              "mode: subagent",
@@ -95,7 +105,7 @@ def render_agent_markdown(*, role: str, model: str, soul_text: str,
              "permission:"]
     rendered = set()
     for key in sorted(set(perms) | set(DEFAULT_DENY_PERMISSIONS)):
-        value = "deny" if key in DEFAULT_DENY_PERMISSIONS and key not in perms else perms.get(key, "ask")
+        value = "deny" if key in DEFAULT_DENY_PERMISSIONS else perms.get(key, "ask")
         if value not in ("allow", "ask", "deny"):
             raise OpenCodeProbeError(f"invalid permission value for {key}: {value}")
         lines.append(f"  {key}: {value}")
@@ -110,14 +120,19 @@ def agent_digest(markdown: str) -> str:
 
 def build_command(*, frozen_entry: dict, matrix_entry: dict, request: dict,
                   prompt_text: str, worktree: Path, out_dir: Path) -> dict:
+    role = request.get("role")
+    if not role:
+        raise OpenCodeProbeError("launch request role is required (S2B1-014)")
     exe = frozen_entry["exe_path"]
     model = matrix_entry.get("primary_model")
-    agent_name = matrix_entry.get("agent_name") or request["role"]
+    agent_name = matrix_entry.get("agent_name") or role
     if not model:
         raise OpenCodeProbeError("matrix entry must approve primary_model")
     extra = matrix_entry.get("extra_argv", [])
     if not isinstance(extra, list) or any(not isinstance(x, str) for x in extra):
         raise OpenCodeProbeError("matrix extra_argv must be a list of strings")
+    from .codex import check_extra_argv  # shared strict allowlist (S2B1-008)
+    check_extra_argv(extra, allowlist={"--pure"}, error=OpenCodeProbeError)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     argv = [exe, "run", "--format", "json",
@@ -126,7 +141,7 @@ def build_command(*, frozen_entry: dict, matrix_entry: dict, request: dict,
             "--dir", str(Path(worktree).resolve()),
             "--title", f"p1-{request['task_id']}-r{request['run_id']}",
             prompt_text]
-    argv += extra
+    argv += list(extra)
     stdin_text = ""
     return {"argv": argv, "stdin_text": stdin_text,
             "result_path": str(out_dir / f"{request['run_id']}.events.jsonl"),
@@ -176,6 +191,7 @@ def extract_session_ref(events: list) -> dict:
 
 def extract_command_evidence(events: list) -> list:
     records = []
+    ordinal = 0
     for event in events:
         raw = event.get("raw") or {}
         part = raw.get("part") or {}
@@ -189,28 +205,28 @@ def extract_command_evidence(events: list) -> list:
                 if command:
                     break
         if tool in ("bash", "shell") or command:
-            records.append({
-                "command": command if isinstance(command, str) else str(command),
-                "claimed_exit": state.get("exit") if isinstance(state, dict) else None,
-                "source": "cli-event-self-report",
-                "trusted": False,
-            })
+            if isinstance(command, str) and command:
+                records.append({
+                    "command": command,
+                    "ordinal": ordinal,
+                    "claimed_exit": state.get("exit") if isinstance(state, dict) else None,
+                    "source": "cli-event-self-report",
+                    "trusted": False,
+                })
+                ordinal += 1
+            else:
+                # S2B1-013: never fabricate a literal "None" command; keep the
+                # event visible but unbindable.
+                records.append({
+                    "command": None, "no_command": True, "ordinal": None,
+                    "claimed_exit": None,
+                    "source": "cli-event-self-report",
+                    "trusted": False,
+                })
     return records
 
 
-def merge_runner_records(claimed: list, runner_records: list) -> list:
-    by_command: dict[str, dict] = {}
-    for record in runner_records or []:
-        if isinstance(record, dict) and isinstance(record.get("command"), str):
-            by_command[record["command"]] = record
-    merged = []
-    for item in claimed:
-        entry = dict(item)
-        match = by_command.get(item["command"])
-        if match is not None and match.get("exit_code") == item.get("claimed_exit"):
-            entry["trusted"] = True
-            entry["source"] = "runner-observed-agreement"
-        elif match is not None:
-            entry["contradiction"] = True
-        merged.append(entry)
-    return merged
+def merge_runner_records(claimed: list, runner_records: list, *,
+                         runner_attestation: dict | None = None) -> list:
+    from .codex import merge_runner_records as _merge  # single shared implementation
+    return _merge(claimed, runner_records, runner_attestation=runner_attestation)

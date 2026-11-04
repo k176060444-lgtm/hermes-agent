@@ -1,5 +1,12 @@
 """Stage-2B-1 harness adapter tests: synthetic-only, no model/provider calls.
 
+REMEDIALIZED CONTRACT (post-audit): extra_argv is strictly allowlisted
+(S2B1-008); merge_runner_records requires an authenticated runner attestation
+and pairs records per-invocation (S2B1-009); 'auto' can never render as allow
+(S2B1-010); events without a command carry no_command instead of a literal
+'None' (S2B1-013); a missing request role is a controlled adapter error
+(S2B1-014).
+
 Every probe runs against a stub executable (a python script echoing captured
 text) or a monkeypatched runner; the real CLIs are never invoked here.
 """
@@ -155,12 +162,14 @@ def _request(tmp_path):
     base = {"soul_sha256": "a" * 64, "matrix_sha256": "b" * 64,
             "spec_sha256": "c" * 64, "intent_sha256": "d" * 64,
             "reviewed_commit": "0" * 40, "input_sha256": "e" * 64,
-            "frozen_harness_sha256": "f" * 64}
+            "frozen_harness_sha256": "f" * 64,
+            "frozen_harness_version": "v"}
     return build_launch_request(task={"task_id": "T"}, stage="2", role="worker",
                                 run_id=3,
                                 matrix_entry={"harness": "codex", "primary_model": "p/m"},
                                 bindings=base, worktree_path=tmp_path,
-                                timeout_seconds=10, idempotency_key="i")
+                                timeout_seconds=10, idempotency_key="i",
+                                command_sha256="4" * 64)
 
 
 def _frozen(tmp_path):
@@ -174,17 +183,18 @@ def test_codex_argv_uses_only_matrix_values(tmp_path):
     cmd = cx.build_command(frozen_entry=_frozen(tmp_path),
                            matrix_entry={"primary_model": "approved/model-A",
                                          "sandbox_mode": "workspace-write",
-                                         "extra_argv": ["--config",
-                                                        "sandbox_mode=workspace-write"]},
+                                         "extra_argv": ["--ephemeral"]},
                            request=_request(tmp_path), soul_text="SOUL", prompt_text="GO",
                            worktree=tmp_path / "wt", out_dir=tmp_path / "out")
     joined = " ".join(cmd["argv"])
     assert "approved/model-A" in joined and "workspace-write" in joined
     assert "-C" in cmd["argv"] and "--json" in cmd["argv"]
     assert cmd["stdin_text"].startswith("SOUL") and "GO" in cmd["stdin_text"]
+    assert cmd["command_sha256"] == sha256("\x00".join(cmd["argv"]).encode("utf-8"))
     # no invented defaults anywhere:
     assert "gpt" not in joined.lower() and "0.166" not in joined
-    print("argv model/sandbox exclusively from matrix; exe:", Path(cmd['argv'][0]).name)
+    print("argv model/sandbox exclusively from matrix; exe:",
+          Path(cmd["argv"][0]).name)
 
 
 def test_codex_argv_requires_matrix_model(tmp_path):
@@ -192,6 +202,36 @@ def test_codex_argv_requires_matrix_model(tmp_path):
         cx.build_command(frozen_entry=_frozen(tmp_path), matrix_entry={},
                          request=_request(tmp_path), soul_text="s", prompt_text="p",
                          worktree=tmp_path, out_dir=tmp_path / "o2")
+
+
+@pytest.mark.parametrize("extra", [
+    ["-m", "unapproved-model-z"],                       # model override
+    ["--model", "unapproved-model-z"],                  # long-form override
+    ["-s", "danger-full-access"],                       # sandbox override
+    ["--dangerously-bypass-approvals-and-sandbox"],     # bypass switch
+    ["--config", "sandbox_mode=danger-full-access"],    # config override
+    ["totally-unknown-flag"],                           # not allowlisted
+    ["positional-value"],                               # non-flag token
+])
+def test_extra_argv_overrides_are_rejected(tmp_path, extra):
+    """S2B1-008: extra_argv cannot touch the approved model/sandbox/worktree
+    or smuggle bypass switches; only the strict allowlist passes."""
+    with pytest.raises(cx.CodexProbeError):
+        cx.build_command(frozen_entry=_frozen(tmp_path),
+                         matrix_entry={"primary_model": "approved/model-A",
+                                       "sandbox_mode": "workspace-write",
+                                       "extra_argv": extra},
+                         request=_request(tmp_path), soul_text="s", prompt_text="p",
+                         worktree=tmp_path, out_dir=tmp_path / "o3")
+
+
+def test_opencode_argv_rejects_override_flags(tmp_path):
+    with pytest.raises(oc.OpenCodeProbeError):
+        oc.build_command(frozen_entry=_frozen(tmp_path),
+                         matrix_entry={"primary_model": "gateway/model-B",
+                                       "extra_argv": ["-m", "unapproved"]},
+                         request=_request(tmp_path), prompt_text="p",
+                         worktree=tmp_path, out_dir=tmp_path / "o4")
 
 
 def test_opencode_argv_and_export(tmp_path):
@@ -209,6 +249,16 @@ def test_opencode_argv_and_export(tmp_path):
     assert export[-2:] == ["export", "ses_123"]
     with pytest.raises(oc.OpenCodeProbeError):
         oc.export_command(frozen_entry=frozen, session_id="")
+
+
+def test_opencode_missing_role_is_controlled_error(tmp_path):
+    """S2B1-014: a missing request role raises the adapter error, not a bare
+    KeyError."""
+    with pytest.raises(oc.OpenCodeProbeError, match="role"):
+        oc.build_command(frozen_entry=_frozen(tmp_path),
+                         matrix_entry={"primary_model": "gateway/model-B"},
+                         request={"run_id": 1, "task_id": "T"}, prompt_text="p",
+                         worktree=tmp_path, out_dir=tmp_path / "o5")
 
 
 # ------------------------------------------------------------------ events
@@ -229,21 +279,49 @@ def test_codex_event_parse_marks_self_report_only():
     assert refs["rollout_path"].endswith("rollout-a.jsonl")
     evidence = cx.extract_command_evidence(events)
     assert evidence and all(item["trusted"] is False for item in evidence)
+    assert evidence[0]["ordinal"] == 0  # per-invocation sequence present
     kinds = [e["kind"] for e in events]
     assert "unparseable" in kinds and "unknown" in kinds
     print("CLI-reported commands stay trusted=False; kinds:", kinds)
 
 
-def test_runner_agreement_upgrades_only_matching_records():
-    claimed = [{"command": "pytest -q", "claimed_exit": 0,
-                "source": "cli-event-self-report", "trusted": False}]
-    merged = cx.merge_runner_records(claimed, [{"command": "pytest -q", "exit_code": 0}])
-    assert merged[0]["trusted"] is True
-    merged2 = cx.merge_runner_records(claimed, [{"command": "pytest -q", "exit_code": 1}])
-    assert merged2[0]["trusted"] is False and merged2[0]["contradiction"] is True
-    merged3 = cx.merge_runner_records(claimed, [])
-    assert merged3[0]["trusted"] is False
-    print("self-report vs runner-record distinction enforced (agreement/conflict/silent)")
+def test_merge_requires_authenticated_runner_attestation():
+    """S2B1-009: an unauthenticated runner_records list can NEVER upgrade
+    trust; every entry is marked as awaiting Stage-2B-2 authentication."""
+    claimed = cx.extract_command_evidence([
+        cx.normalize_event({"type": "exec_command_end",
+                            "command": "pytest -q", "exit_code": 0})])
+    forged = [{"command": "pytest -q", "ordinal": 0, "exit_code": 0}]
+    merged = cx.merge_runner_records(claimed, forged)
+    assert merged[0]["trusted"] is False
+    assert merged[0]["promotion_blocked"]
+    # a fake 'attested' dict that carries a test seam is rejected too:
+    fake = {"attested": True, "test_seam": True}
+    merged2 = cx.merge_runner_records(claimed, forged, runner_attestation=fake)
+    assert merged2[0]["trusted"] is False
+    print("unauthenticated runner lists can never upgrade trust")
+
+
+def test_merge_pairs_per_invocation_with_attestation():
+    """With a live attestation, records pair by ordinal and a single record is
+    consumed at most once."""
+    events = [cx.normalize_event({"type": "exec_command_end",
+                                  "command": "make test", "exit_code": 0}),
+              cx.normalize_event({"type": "exec_command_end",
+                                  "command": "make test", "exit_code": 1})]
+    claimed = cx.extract_command_evidence(events)
+    records = [{"command": "make test", "ordinal": 0, "exit_code": 0},
+               {"command": "make test", "ordinal": 1, "exit_code": 1}]
+    attestation = {"attested": True}
+    merged = cx.merge_runner_records(claimed, records,
+                                     runner_attestation=attestation)
+    assert merged[0]["trusted"] is True and merged[1]["trusted"] is True
+    # one record for TWO identical invocations: the second stays unupgraded
+    merged2 = cx.merge_runner_records(claimed, records[:1],
+                                      runner_attestation=attestation)
+    assert merged2[0]["trusted"] is True
+    assert merged2[1]["trusted"] is False
+    assert merged2[1].get("no_matching_runner_record") is True
 
 
 def test_opencode_event_and_export_parsing():
@@ -260,9 +338,24 @@ def test_opencode_event_and_export_parsing():
     assert refs["export_required_for_final_evidence"] is True
     evidence = oc.extract_command_evidence(events)
     assert evidence[0]["command"] == "make test" and evidence[0]["trusted"] is False
-    merged = oc.merge_runner_records(evidence, [{"command": "make test", "exit_code": 0}])
+    merged = oc.merge_runner_records(evidence, [{"command": "make test",
+                                                 "ordinal": 0, "exit_code": 0}],
+                                     runner_attestation={"attested": True})
     assert merged[0]["trusted"] is True
     print("opencode session export + command evidence pipeline OK")
+
+
+def test_opencode_bash_event_without_command_is_unbindable():
+    """S2B1-013: no fabricated 'None' command string."""
+    events = [oc.normalize_event({"type": "tool", "tool": "bash",
+                                  "part": {"state": {"status": "completed"}}})]
+    records = oc.extract_command_evidence(events)
+    assert records[0]["command"] is None
+    assert records[0]["no_command"] is True
+    merged = oc.merge_runner_records(records, [],
+                                     runner_attestation={"attested": True})
+    assert merged[0]["trusted"] is False  # nothing to bind
+    print("command-less bash events kept visible but unbindable")
 
 
 # ------------------------------------------------------------------ agents
@@ -278,6 +371,21 @@ def test_agent_render_binds_role_model_soul():
     digest = oc.agent_digest(markdown)
     assert digest == sha256(markdown.encode())
     print("agent definition rendered deterministically; digest", digest[:12])
+
+
+def test_agent_render_refuses_auto_allow():
+    """S2B1-010: the exact audit reproduction is now a hard refusal."""
+    with pytest.raises(oc.OpenCodeProbeError, match="auto"):
+        oc.render_agent_markdown(role="r", model="m", soul_text="s",
+                                 description="d", permissions={"auto": "allow"})
+
+
+def test_agent_render_forces_auto_deny():
+    markdown = oc.render_agent_markdown(role="r", model="m", soul_text="s",
+                                        description="d",
+                                        permissions={"auto": "deny",
+                                                     "bash": "ask"})
+    assert "auto: deny" in markdown and "bash: ask" in markdown
 
 
 def test_agent_render_refuses_bad_permission():
