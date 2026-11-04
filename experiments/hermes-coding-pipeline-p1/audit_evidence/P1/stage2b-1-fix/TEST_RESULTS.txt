@@ -1,0 +1,30 @@
+Stage-2B-1 remediation re-audit test evidence (21bao Windows 10, Python 3.11.15, git 2.54.0.windows.1)
+Fixed audited commit: c08e0f9738643edce0d49e39f465ff10cb8aaee4 (tree 87b93c80206db8480c9bb78e9fdd0236fb460505)
+
+[A] Snapshot integrity
+  107/107 git-blob files re-hashed: 0 mismatch before suite, 0 after suite;
+  probe-copy audited sources: 0 mismatch post probes (no source touched).
+  compare 47f7e18b...c08e0f97 = exactly 11 declared files; reports/core engine untouched.
+
+[B] Project suite (fixed snapshot, single run): tests=248 passed=243 failed=0 errors=0 skipped=5 time=178.998s exit=0
+  skipped (POSIX-only, by name): r4_002_posix_tab_filename; 3x r4_001 posix trust cases; test_posix_paths_fail_closed
+  DEVELOPER CLAIM 248/243/0/0/5 CONFIRMED by independent JUnit parse (consistent arithmetic this round).
+  Windows-critical executed: r5_001 x2, r6_001 x6 (real WAL recreation), r7_001 x4,
+  stage2b1 windows-live x9 (job tree kill, suspended spawn, dead-PID, icacls child, process_identity self).
+
+[C] Independent auditor probes: tests/test_s2b1fix_independent.py -> tests=51 passed=51 failed=0 skipped=0 time=2.279s exit=0
+  A-group fa1-fa4: fabricated-manifest integrity self-consistency (finding evidence),
+     request-side pin inert, health/launch blocked.
+  B-group fb1-fb9: forged attestation upgrades; same-ordinal different-command upgrades;
+     duplicate ordinal last-wins; cross-run record reuse; opencode shares weakness;
+     falsy/seam attestation correctly rejected.
+  C-group fc1-fc5 (live 21bao): dead PID refused (STILL_ACTIVE); creation-time strict;
+     suspended-spawn no-escape full-tree kill; assign-failure child never runs;
+     helper identity == caller (boundary).
+  D-group fd1-fd14: binding/status/argv/init/capture/None/role/approve/poll/ledger
+     (seam+live)/gate/inert-boolean locks.
+  Disclosure: 1 initial failure was an auditor fixture typo (missing mkdir), corrected;
+  all reproductions of S2B1-009 are PRODUCT behavior, kept as NOT_FIXED.
+
+[D] Phase3/4 parallel, Gate 0.2/A/B/5.9, 5/5/2 budgets, event chain: covered by the
+  unchanged original suite, all green.

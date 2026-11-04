@@ -1,0 +1,194 @@
+{
+  "audit": "Stage-2B-1 remediation re-audit",
+  "auditor": "Qwen-Flash",
+  "status": "COMPLETE",
+  "code_verdict": "CONDITIONAL",
+  "audited_commit": "c08e0f9738643edce0d49e39f465ff10cb8aaee4",
+  "parent": "47f7e18b0025bb6b271de6bf234f14c6741984a1",
+  "original_fail_commit": "cc3a42cd0e5992bc64ed0bdabafd67cae71e3227",
+  "tree": "87b93c80206db8480c9bb78e9fdd0236fb460505",
+  "platform": "21bao Windows 10 LTSC, Python 3.11.15, git 2.54.0.windows.1",
+  "recheck_summary": {
+    "FIXED": 13,
+    "FIXED_AS_SCOPED": 1,
+    "FIXED_MECHANISM": 1,
+    "NOT_FIXED": 1,
+    "REGRESSION": 0,
+    "of_16": "15 fixed (2 with scope caveats), 1 NOT_FIXED (S2B1-009 partial)"
+  },
+  "recheck": [
+    {
+      "finding": "S2B1-001",
+      "status": "FIXED",
+      "note": "verify_execution_identity forces validate_launch_request+validate_receipt+manifest re-measure (runner.py:482-484); pin read ONLY from manifest arg (:485); self-hash boundary documented (:144, docstring).",
+      "evidence_probe": "fa3, fa2, developer test_identity_* all pass"
+    },
+    {
+      "finding": "S2B1-002",
+      "status": "FIXED",
+      "note": "process_identity() is a single OS measurement (liveness+creation time+token+image); identity_probe seam forced attested=False+test_seam=True (:515-521); receipt path never used as image.",
+      "evidence_probe": "fa2 + dev tests; 21bao live"
+    },
+    {
+      "finding": "S2B1-003",
+      "status": "FIXED",
+      "note": "STILL_ACTIVE check refuses exited handle-held PIDs; strict process_start_time==GetProcessTimes blocks PID reuse; post-exit only verify_receipt_integrity (attested恒False, capture re-hash, fail-closed without capture_dir).",
+      "evidence_probe": "fc1 fc2 fa1 live"
+    },
+    {
+      "finding": "S2B1-004",
+      "status": "FIXED",
+      "note": "Receipt schema binds stage/role/harness/model/reviewed_commit/command_sha256/harness_version; validate_receipt cross-checks all.",
+      "evidence_probe": "fd1 10-param matrix refused"
+    },
+    {
+      "finding": "S2B1-005",
+      "status": "FIXED",
+      "note": "poll() validates structure+binding+manifest echo; junk -> RECEIPT_UNVERIFIED+reconciliation_required; bound -> validated RECEIPT.",
+      "evidence_probe": "fd10"
+    },
+    {
+      "finding": "S2B1-006",
+      "status": "FIXED",
+      "note": "runner_health never returns available=True; explicit 'NOT deployed' + manifest_provisioned split.",
+      "evidence_probe": "fa4 with fabricated manifest"
+    },
+    {
+      "finding": "S2B1-007",
+      "status": "FIXED_AS_SCOPED",
+      "note": "Bounded enumeration root+sqlite/wal/shm+4 evidence dirs, one batched PS query; child exposure blocks; docstring honest about enumerated-path-only coverage.",
+      "evidence_probe": "fd11 seam + fd12 live icacls; agentx ACCESS_DENIED proof stays Stage-2B-2"
+    },
+    {
+      "finding": "S2B1-008",
+      "status": "FIXED",
+      "note": "Strict per-adapter allowlist {--ephemeral}/{--pure} + reserved-flag blacklist; positional and unknown tokens rejected.",
+      "evidence_probe": "fd5 8x2"
+    },
+    {
+      "finding": "S2B1-009",
+      "status": "NOT_FIXED",
+      "note": "PARTIAL: gate now requires an attestation flag but it is an UNAUTHENTICATED caller dict; records are keyed by ordinal ONLY (no command match), carry no task/run identity, and duplicate ordinals silently last-wins. Forged {'attested': True} + same-ordinal-different-command + cross-run records all upgrade self-report to trusted=True in BOTH adapters. The developer remediation test itself codifies the bare-dict upgrade.",
+      "evidence_probe": "fb1 fb2 fb4 fb6 fb9 reproduce on 21bao; severity remains P2 (no consumer wired, zero dispatch)"
+    },
+    {
+      "finding": "S2B1-010",
+      "status": "FIXED",
+      "note": "Any non-deny value for auto raises OpenCodeProbeError; auto renders deny unconditionally.",
+      "evidence_probe": "fd4 exact prior reproduction now refused"
+    },
+    {
+      "finding": "S2B1-011",
+      "status": "FIXED",
+      "note": "Dedicated _init_handler forwards all 8 required flags; missing flag raises ConfigError pre-invoke.",
+      "evidence_probe": "fd6 argv-by-argv"
+    },
+    {
+      "finding": "S2B1-012",
+      "status": "FIXED",
+      "note": "Per-stream collection cap via chunked pump; beyond-cap drained+discarded; truncated flags surfaced.",
+      "evidence_probe": "fd7 128KiB->2KiB cap"
+    },
+    {
+      "finding": "S2B1-013",
+      "status": "FIXED",
+      "note": "command None + no_command marker, unbindable in merge; no literal 'None'.",
+      "evidence_probe": "fd8"
+    },
+    {
+      "finding": "S2B1-014",
+      "status": "FIXED",
+      "note": "Missing request role raises OpenCodeProbeError before any access.",
+      "evidence_probe": "fd8"
+    },
+    {
+      "finding": "S2B1-015",
+      "status": "FIXED",
+      "note": "Status/exit semantics enforced (COMPLETED=0, FAILED=nonzero, TIMEOUT/KILLED=None); timestamps numeric+ordered; UNKNOWN reconciliation-only.",
+      "evidence_probe": "fd2 fd3"
+    },
+    {
+      "finding": "S2B1-016",
+      "status": "FIXED_MECHANISM",
+      "note": "create_suspended_in_job CREATE_SUSPENDED->assign->resume with terminate-on-failure; 21bao live: post-resume grandchild inside job, full tree killed; assign-failure child never executes; helper runs under CALLER identity - explicitly not an agentx runner.",
+      "evidence_probe": "fc3 fc4 fc5 live"
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "S2B1F-001",
+      "severity": "P2",
+      "status": "SUBSUMED_INTO_S2B1-009",
+      "title": "merge attestation dict is unauthenticated; records lack (command, task/run) binding",
+      "note": "Counted inside the S2B1-009 NOT_FIXED verdict; listed separately for remediation clarity. Fix: attestation must carry fields re-checked against the live OS measurement (user_sid/start_time/image/run-scoped digest from protected storage) AND records must be keyed and validated by (command, ordinal, task_id, run_id)."
+    },
+    {
+      "id": "S2B1F-002",
+      "severity": "P3",
+      "status": "ADDED_BOUNDARY",
+      "title": "Manifest dict provenance is not anchored to protected orchestrator state",
+      "evidence": "fa1/fa2: a fully caller-fabricated manifest (shape valid, runner_exe digest matching a caller-written file) passes _assert_manifest_current; integrity_verified=True proves self-consistency only. Code keeps attested=False and documents the boundary, so no identity claim is fabricated; but direct-function callers bypass the client's protected-home read path.",
+      "fix": "Anchor verification to RunnerClient(manifest_path) provenance (or record the manifest digest inside the protected ledger at provisioning) and align _assert_manifest_current docstring wording with what it actually proves."
+    },
+    {
+      "id": "S2B1F-003",
+      "severity": "P3",
+      "status": "INFORMATIONAL",
+      "title": "process_identity cross-user token access depends on debug privilege (Stage-2B-2 live item)",
+      "note": "Orchestrator-side OpenProcess(0x1000)/OpenProcessToken against a future cross-user agentx process may require SeDebugPrivilege; behavior under the real agent identity is untested (no account exists). Must be verified live in Stage-2B-2; recorded here so nobody assumes it from unit seams."
+    }
+  ],
+  "carry": [
+    {
+      "id": "executor-gate",
+      "status": "INTACT",
+      "note": "flag False; raises executor.py:121,129; zero runtime imports of runner/winjobs/harness (fd13 grep)."
+    },
+    {
+      "id": "approve-spec",
+      "status": "FIXED_FAIL_CLOSED",
+      "note": "BLOCKED without any CLI invocation (fd9 spy count=0); gap 'gateway approval identity binding' stays NOT_VERIFIED."
+    },
+    {
+      "id": "historical-reports+core-engine",
+      "status": "UNCHANGED",
+      "note": "round-001..007 + stage2b-1 reports, executor/workflow/state/trust/a2a/contracts/gitops/audit byte-identical to parent blobs."
+    },
+    {
+      "id": "R5-005 / R2-006",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "note": "unchanged; no account/service/P0 transport."
+    }
+  ],
+  "not_verified": [
+    "runner service/transport/agentx provisioning (Stage-2B-2)",
+    "cross-user token access semantics under real agent identity (S2B1F-003)",
+    "real Codex/OpenCode event schemas and agent-file/permission enforcement",
+    "real model/test execution receipts",
+    "P0 A2A transport & physical identity (R2-006)",
+    "gateway-integrated approval identity binding (approve-spec stays BLOCKED)",
+    "production E: worktree lifecycle, gateway restart end-to-end"
+  ],
+  "test_stats": {
+    "project_suite": {
+      "collected": 248,
+      "passed": 243,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 5,
+      "exit_code": 0
+    },
+    "independent_probes": {
+      "unique": 51,
+      "passed": 51
+    }
+  },
+  "gate": {
+    "stage2b2_allowed": false,
+    "p1_21bao_production": "BLOCKED",
+    "required_before_wiring": [
+      "S2B1-009 full remediation (attestation authenticity + per-record binding)",
+      "S2B1F-002 manifest provenance anchoring (recommended)"
+    ]
+  }
+}

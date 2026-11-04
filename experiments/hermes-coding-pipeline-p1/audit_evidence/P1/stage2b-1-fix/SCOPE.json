@@ -1,0 +1,33 @@
+{
+  "scope": "Stage-2B-1 remediation re-audit ONLY: the 11 files changed between 47f7e18b and c08e0f97 (p1/runner.py, p1/winjobs.py, p1/harness/codex.py, p1/harness/opencode.py, integrations/hermes/p1_orchestrator/__init__.py, 4 stage2b1 test files, docs/STAGE2B1_REMEDIATION.md, prompts/STAGE2B1_REMEDIATION_AUDIT_PROMPT.md), plus regression of the unchanged core engine and prior audit artifacts.",
+  "audited_commit": "c08e0f9738643edce0d49e39f465ff10cb8aaee4",
+  "parent": "47f7e18b0025bb6b271de6bf234f14c6741984a1",
+  "original_fail_commit": "cc3a42cd0e5992bc64ed0bdabafd67cae71e3227",
+  "methods": [
+    "git-blob fixed snapshot + double integrity recheck",
+    "full project suite from fixed snapshot",
+    "51-case independent adversarial probe file",
+    "live Windows Job/Object/ACL/dead-PID/suspended-spawn experiments",
+    "mandatory extra tests A(manifest provenance) B(record forgery) C(process/job boundary)"
+  ],
+  "verdict": {
+    "audit": "COMPLETE",
+    "code": "CONDITIONAL",
+    "fixed": "15/16 (S2B1-007 as scoped, S2B1-016 mechanism)",
+    "not_fixed": [
+      "S2B1-009"
+    ],
+    "new_p1": 0,
+    "new_p0": 0,
+    "new_p2": "1 (subsumed in S2B1-009)",
+    "new_p3": 2
+  },
+  "excluded": [
+    "main",
+    "historical audit reports",
+    "live Hermes config/gateways",
+    "accounts/ACL provisioning",
+    "paid models",
+    "P0/remote nodes"
+  ]
+}
