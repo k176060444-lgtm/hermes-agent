@@ -1,0 +1,89 @@
+AUDIT_STATUS: COMPLETE (offline code audit); real integration/production NOT_VERIFIED
+Audited source SHA: 7ef210a90bc3cd8ec3d230d1901f0fbd7715015c
+Audited parent (Round-001 report commit): a72e13a987ca490ec73c9c9456741c0bd4e8df39
+Audited tree SHA: 8681a8bbd430984744f56e0a38448361d1ba7d59
+Environment: Windows 10; Python 3.11.15; pytest 9.1.0; git 2.54.0.windows.1
+Network during tests: GIT_ALLOW_PROTOCOL=file; no live A2A, no real model, no paid provider, no production config, no remote node.
+
+SOURCE INTEGRITY
+- Snapshot acquired through GitHub tree/blob API; 45 files; each file re-hashed as Git blob before and after the test runs.
+- Verify result: 45/45 matched manifest; errors: [].
+- Branch HEAD at audit start and before upload: 7ef210a90bc3cd8ec3d230d1901f0fbd7715015c (unchanged); remote audit_evidence contained only README.md and round-001/.
+
+ORIGINAL PROJECT TESTS (unmodified snapshot, isolated folders)
+Command template: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUTF8=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0 python -B -m pytest -q -p no:cacheprovider --basetemp <unique> --junitxml <unique> <8 node ids per batch>
+Working directory: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round002-audit-20261104\snapshot\experiments\hermes-coding-pipeline-p1
+Collection: exit 0; 47 unique test node IDs (tests/test_pipeline.py 18 + tests/test_remediation_round1.py 29).
+
+Batch results (JUnit XML under testlogs/):
+- batch0.xml: tests=8 failures=0 errors=0 skipped=0 time=14.311s
+- batch1.xml: tests=8 failures=0 errors=0 skipped=0 time=7.235s
+- batch2.xml: tests=8 failures=0 errors=0 skipped=0 time=10.543s
+- batch3.xml: tests=8 failures=0 errors=0 skipped=0 time=11.778s
+- batch4.xml: tests=8 failures=0 errors=0 skipped=0 time=5.890s
+- batch5.xml: tests=7 failures=0 errors=0 skipped=0 time=6.809s
+TOTAL: 47/47 passed; 0 failures; 0 errors; 0 skipped; all batch exit codes 0.
+No fixture adaptation was needed in Round-002: tests ran on a byte-identical copy of the pinned directory.
+
+INDEPENDENT ADVERSARIAL PROBES (separate copy probe-copy/; assertions pass when the defect is reproduced)
+Command template: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file python -B -m pytest -q -s -p no:cacheprovider --basetemp <unique> --junitxml <unique> tests/test_round2_independent.py -k <selector>
+- independent1: exit=0 duration=12.469s argv=tests/test_round2_independent.py -k git_index_flags or tester_can or valid_tester
+    flag= --assume-unchanged index_sha_unchanged= True git_clean= True
+    flag= --assume-unchanged HEAD_equals_worktree= False git_clean= True status= WAITING_GATE_5_9 evidence= COMPLIANT
+    .flag= --skip-worktree index_sha_unchanged= True git_clean= True
+    flag= --skip-worktree HEAD_equals_worktree= False git_clean= True status= WAITING_GATE_5_9 evidence= COMPLIANT
+    .tester action= weaken exam exists= True final= WAITING_GATE_5_9 evidence= COMPLIANT
+    .tester action= delete exam exists= False final= WAITING_GATE_5_9 evidence= COMPLIANT
+    .tester addition original= e99705201d4f115f3a9221ec92eeb2c13a2a8181 new= e3aab200835cd5ba31e90e368e905794a406fefc recorded= e3aab200835cd5ba31e90e368e905794a406fefc status= WAITING_GATE_5_9
+    .
+    5 passed, 5 deselected in 12.03s
+- independent2: exit=0 duration=9.297s argv=tests/test_round2_independent.py -k corrupted_reviewer or valid_no_op or unbound_run
+    after real corrupted reviewer report: status= BLOCKED retraces= 1 stage= 5.85 last_error= cannot safely identify origin of compliance discrepancy: run report SHA mismatch: 4
+    .explicit no_op_reason: FAILED retraces= 2 error= compliance retrace cap exceeded: no-op remediation needs explicit reason
+    .run details + stdout modified with DB write; chain_errors= [] evidence= COMPLIANT
+    .
+    3 passed, 7 deselected in 8.79s
+- independent3: exit=0 duration=1.594s argv=tests/test_round2_independent.py -k semantically_unapproved or io_failure
+    alternative soul accepted= True status= WAITING_APPROVAL
+    .after injected initialization failure: snapshots= True state_db= True
+    .
+    2 passed, 8 deselected in 1.07s
+- independent4: exit=0 duration=7.218s argv=tests/test_round2_independent.py -k tester_can_change_or_delete
+    tester action= weaken exam exists= True final= WAITING_GATE_5_9 evidence= COMPLIANT
+    .tester action= delete exam exists= False final= WAITING_GATE_5_9 evidence= COMPLIANT
+    .
+    2 passed, 8 deselected in 6.78s
+- independent5: exit=0 duration=4.297s argv=tests/test_round2_independent.py -k gate_b_tester or resume_reseals
+    Gate A exam protected hash= 73c4f173ab362d0fc58eadb0122dd4c9dfde7e5fc3b20fc682c5e88e5d698ef3 final hash= e32287f23c1acfa9a442f5a1b700e3033f363d38c6bc253679d0b20270ff06ff status= WAITING_GATE_5_9 evidence= COMPLIANT
+    .tamper errors before resume= 1 after= 0 status job IDs= ['ORIGINAL-LOCAL-JOB', 'TAMPERED-LOCAL-JOB'] out= WAITING_EXTERNAL
+    .
+    2 passed, 10 deselected in 3.88s
+- independent6: exit=0 duration=2.797s argv=tests/test_round2_independent.py -k replay_worker_after_real_remediation
+    original worker input= a1516be0d2f90c0dc57360b12462256c70c5aaa6 post-remediation= 45571bba51b6dcdf8e965687489350cfd47c5981 replayed worker input= 45571bba51b6dcdf8e965687489350cfd47c5981 status= READY stage= 3+4
+    .
+    1 passed, 12 deselected in 2.42s
+- independent7: exit=0 duration=11.969s argv=tests/test_round2_independent.py -k reviewers_overlap or budgets_persist
+    review barrier= ['quality_reviewer', 'spec_reviewer'] audits= ['quality_reviewer', 'spec_reviewer'] input SHAs= {'7812c41a2cdd560de37158baf9580a7327a20d82'} status= WAITING_GATE_5_9
+    .budget a before= 2 after= 5 status= FAILED CLI exit= 10
+    .budget b before= 2 after= 5 status= FAILED CLI exit= 10
+    .budget compliance before= 1 after= 2 status= FAILED CLI exit= 10
+    .
+    4 passed, 13 deselected in 11.60s
+- independent8: exit=0 duration=1.047s argv=tests/test_round2_independent.py -k integration_entry_and_a2a
+    integration status= BLOCKED runner calls= 0 fake identity errors= ['integration A2A trusted physical identity contract NOT_VERIFIED', 'A2A souls_sha256 does not match approved task']
+    .
+    1 passed, 17 deselected in 0.52s
+- independent9: exit=0 duration=0.781s argv=tests/test_round2_independent.py -k direct_a2a_adapter_integration
+    direct call_adapter integration local stub executed= True result= {'job_id': 'LOCAL-STUB'}
+    .
+    1 passed, 18 deselected in 0.40s
+
+UNIQUE PROBE CASES: 19 (21 executions; test_tester_can_change_or_delete_existing_exam was re-run in batch 4 and is not double-counted).
+All probe executions exited 0: the observed defective behaviour is what the assertions encode; this is NOT a claim that P1 passes.
+
+TOTAL DISTINCT OFFLINE CASES: 47 project tests + 19 independent probe cases = 66; 0 unexpected failures/errors.
+
+LIMITS
+- Two auxiliary subagent reviews were refused by the provider content filter; their scopes were re-covered by the main auditor using the code reading and probes listed above. The one completed auxiliary review was treated as a lead only and its material claims were re-derived from code; no unverified claim is used as evidence.
+- No real Harness, model, P0, remote A2A node, physical host attestation, paid call, E: worktree or production path was used.
+- SQLite tampering probes assume local write access to state.sqlite; Git flag probes use only disposable worktrees.

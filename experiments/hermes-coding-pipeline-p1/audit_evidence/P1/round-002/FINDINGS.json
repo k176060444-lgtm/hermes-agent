@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "audit_round": "round-002",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "7ef210a90bc3cd8ec3d230d1901f0fbd7715015c",
+  "audited_commit_parent": "a72e13a987ca490ec73c9c9456741c0bd4e8df39",
+  "audited_tree_sha": "8681a8bbd430984744f56e0a38448361d1ba7d59",
+  "round1_report_commit": "a72e13a987ca490ec73c9c9456741c0bd4e8df39",
+  "verdict": "FAIL",
+  "audit_status": "COMPLETE",
+  "summary": {
+    "round1_total": 29,
+    "round1_status_counts": {
+      "FIXED": 15,
+      "MITIGATED_FAIL_CLOSED": 7,
+      "NOT_FIXED": 6,
+      "REGRESSION": 1,
+      "NOT_VERIFIED": 0
+    },
+    "new_findings_total": 12,
+    "new_severity_counts": {
+      "P0": 0,
+      "P1": 4,
+      "P2": 3,
+      "P3": 5
+    }
+  },
+  "round1_dispositions": [
+    {
+      "id": "P1-001",
+      "original_severity": "P0",
+      "original_claim": "仅凭适配器返回的布尔值和任意字符串即可通过真实模式的物理节点身份检查。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/a2a.py:42-45, 73-79",
+      "tests": "test_integration_entry_and_a2a_identity_fail_closed",
+      "assessment": "integration 模式无条件追加 NOT_VERIFIED，伪造 attestation 不能放行；真实物理身份认证未接入，不能判 FIXED。",
+      "minimal_fix": "接入 P0 可信物理身份证明（签名/挑战响应）前保持阻断。"
+    },
+    {
+      "id": "P1-002",
+      "original_severity": "P0",
+      "original_claim": "盲审返回 QUESTION 或 NEEDS_SPECIALIST 仍可进入后续环节并抵达 Gate 5.9。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:409-411, 323-324",
+      "tests": "test_p002_a2a_question_stops_pipeline[QUESTION/NEEDS_SPECIALIST]",
+      "assessment": "两种未解决裁决均停在 WAITING_CLARIFICATION。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-003",
+      "original_severity": "P0",
+      "original_claim": "Gate A/B 接受只打印 PASS 的本地包装器，未核验实际测试执行及原始退出码。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/workflow.py:583-587; p1/executor.py:41-48",
+      "tests": "test_p003_and_021_integration_never_trusts_stub; test_integration_entry_and_a2a_identity_fail_closed",
+      "assessment": "integration 在派发前被硬阻断（0 次 runner 调用）；真实测试执行收据未接入。",
+      "minimal_fix": "保持阻断，直至有可信测试执行收据。"
+    },
+    {
+      "id": "P1-004",
+      "original_severity": "P0",
+      "original_claim": "Worker 未提交的改动可连同旧 HEAD 被送审并通过整条离线流程。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/gitops.py:21-22; p1/workflow.py:171-172, 190-195",
+      "tests": "test_git_index_flags_hide_dirty_worker_from_gate[--assume-unchanged/--skip-worktree]",
+      "assessment": "普通脏文件被拦，但 Git 索引标记可让 status 显示干净、索引摘要不变；实际工作树内容与 HEAD 不同，最终仍 WAITING_GATE_5_9 + COMPLIANT。",
+      "minimal_fix": "派发前用 `git ls-files -v` 检查 assume-unchanged/skip-worktree 标志，并对工作树逐文件哈希（或 `git diff --no-index` 对照 HEAD）；存在标志或内容差异即阻断。"
+    },
+    {
+      "id": "P1-005",
+      "original_severity": "P0",
+      "original_claim": "未审阅案卷的仲裁假包装器可仅凭 PASS、报告字符串和引用 SHA 获得合规记录。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/workflow.py:298-312; p1/audit.py:60-64",
+      "tests": "test_p005_arbitrator_case_is_fixed_and_registered",
+      "assessment": "案卷清单已冻结且审计要求 case SHA；无法证明模型实际读取，integration 阻断。",
+      "minimal_fix": "保持阻断；接入可核验的案卷读取收据。"
+    },
+    {
+      "id": "P1-006",
+      "original_severity": "P1",
+      "original_claim": "整改 Worker 可以削弱 Tester A 考卷，系统未阻断。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/workflow.py:193-205; p1/audit.py:43-48",
+      "tests": "test_gate_b_tester_can_weaken_gate_a_protected_exam; test_tester_can_change_or_delete_existing_exam[weaken/delete]",
+      "assessment": "Worker 路径已检查 protected_tests；Tester B 不受该检查约束，且 Gate A 快照晚于本阶段提交，基线测试可被删除。",
+      "minimal_fix": "见 R2-001。"
+    },
+    {
+      "id": "P1-007",
+      "original_severity": "P0",
+      "original_claim": "Gate 5.9 可导出未经登记的伪造仲裁报告；已登记报告被改写时导出也不阻断。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:643-663, 440-447",
+      "tests": "test_p007_rogue_final_report_is_not_exported; test_p007_and_016_tampered_report_or_stdout_blocks_export",
+      "assessment": "导出只读两个已登记文件并逐字节核对 SHA；未登记与改写报告被拒。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-008",
+      "original_severity": "P1",
+      "original_claim": "合规回溯修复报告后，旧的 5.85 NON_COMPLIANT 被再次当成未解决问题并耗尽预算。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:499-518",
+      "tests": "test_p008_old_final_audit_does_not_poison_recomputed_final",
+      "assessment": "仅最新 5.85:pro_audit 参与判定，历史违规保留但不重复计入。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-009",
+      "original_severity": "P1",
+      "original_claim": "Planner 看到的提交与 Gate 0.2 后 worktree 的 base_ref 可以不同。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:65-68, 363-366",
+      "tests": "test_p009_planner_and_worktree_must_share_base_commit",
+      "assessment": "解析 base commit 并与 HEAD 比较，建 worktree 前再次检查。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-010",
+      "original_severity": "P1",
+      "original_claim": "矩阵为本地角色指定其他已登记节点时，执行器仍在本机执行并记为合规。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/contracts.py:83-86; p1/workflow.py:583-587",
+      "tests": "test_p010_local_roles_cannot_run_on_debian_node",
+      "assessment": "本地角色必须绑定唯一 Windows 主节点，盲审必须 Debian；物理机身份仍未认证，integration 阻断。",
+      "minimal_fix": "接入主机身份证明后解除。"
+    },
+    {
+      "id": "P1-011",
+      "original_severity": "P1",
+      "original_claim": "12 份空 Soul 文件可以被当作有效角色契约冻结。",
+      "status": "FIXED",
+      "evidence": "p1/contracts.py:135-147",
+      "tests": "test_p011_blank_soul_contract_is_rejected",
+      "assessment": "空/缺章节/过短 Soul 在发布快照前被拒。",
+      "minimal_fix": "已修复；Soul 未绑定审批见 R2-005。"
+    },
+    {
+      "id": "P1-012",
+      "original_severity": "P2",
+      "original_claim": "并行审查中第一份审查不合规时，第二份审查的独立审计记录未写入 audit_history。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:249-275",
+      "tests": "test_p012_both_parallel_audit_records_survive_first_violation; test_reviewers_overlap_and_keep_both_audits",
+      "assessment": "两位 Reviewer 先各自写入独立审计记录再判断汇合；线程屏障证明真实重叠且引用同一 SHA。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-013",
+      "original_severity": "P2",
+      "original_claim": "流水线状态为 FAILED 时 run 命令仍以进程退出码 0 结束，容易被外部调度误判。",
+      "status": "FIXED",
+      "evidence": "p1/cli.py:59-63",
+      "tests": "test_p013_failed_run_nonzero_cli_exit; test_budgets_persist_across_new_process",
+      "assessment": "FAILED=10、BLOCKED=11、NEEDS_RECONCILIATION=12、audit 不合规=14。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-014",
+      "original_severity": "P0",
+      "original_claim": "Gate 0.1 的批准文件在校验后、复制前被替换，未批准内容也会成为冻结快照。",
+      "status": "FIXED",
+      "evidence": "p1/contracts.py:115-164; p1/workflow.py:557-573",
+      "tests": "test_p014_gate01_snapshot_cannot_race_copy",
+      "assessment": "同一份已读字节完成校验与发布，无 check-then-copy 竞态。",
+      "minimal_fix": "已修复；审批人真实身份仍 NOT_VERIFIED。"
+    },
+    {
+      "id": "P1-015",
+      "original_severity": "P0",
+      "original_claim": "具备本地任务数据库写权限时，仅修改状态行即可绕过 Gate 0.2，事件链仍显示有效。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/state.py:68-99; p1/workflow.py:575-582, 627-635",
+      "tests": "test_p015_task_row_edit_cannot_skip_gate02; test_resume_reseals_tampered_state_before_integrity_check",
+      "assessment": "run() 能拦截 row-only 篡改；resume() 在校验前把 WAITING_EXTERNAL 写回 READY，重新封存篡改行，随后用伪造 job id 轮询。",
+      "minimal_fix": "resume 先只读校验事件链与 Gate 0.2，再允许状态迁移；见 R2-002。"
+    },
+    {
+      "id": "P1-016",
+      "original_severity": "P1",
+      "original_claim": "原始角色 stdout 被改写后，证据核验仍报告 COMPLIANT。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/workflow.py:448-471; p1/state.py:101-110",
+      "tests": "test_p007_and_016_tampered_report_or_stdout_blocks_export; test_unbound_run_metadata_can_rewrite_log_and_pass",
+      "assessment": "单改日志会被发现；同时改写 runs.details 的两个摘要与 stdout 后，事件链无错误、verify_evidence=COMPLIANT。",
+      "minimal_fix": "把 runs.details 摘要写入事件链并在核验时重算；见 R2-003。"
+    },
+    {
+      "id": "P1-017",
+      "original_severity": "P1",
+      "original_claim": "只读角色的 Git 暂存区内容更改可漏过清单与权限审计。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/gitops.py:25-30",
+      "tests": "test_p017_index_only_modification_detected; test_git_index_flags_hide_dirty_worker_from_gate",
+      "assessment": "普通 staged blob 变化可检出；索引标志与工作树内容不在摘要范围内。",
+      "minimal_fix": "使用 `git ls-files --debug`/`git diff --no-index` 或直接哈希工作树并校验标志位；见 P1-004。"
+    },
+    {
+      "id": "P1-018",
+      "original_severity": "P1",
+      "original_claim": "Tester 改变 HEAD 后，仲裁仍可引用旧 commit 并通过。",
+      "status": "FIXED",
+      "evidence": "p1/gitops.py:37-46; p1/workflow.py:196-201, 319-322",
+      "tests": "test_p018_tester_cannot_replace_git_head_with_divergent_commit; test_valid_tester_addition_updates_downstream_commit",
+      "assessment": "只允许 addititive、test-only 提交；新提交成为下游 baseline；分叉 HEAD 被拒。",
+      "minimal_fix": "已修复；测试内容完整性见 R2-001。"
+    },
+    {
+      "id": "P1-019",
+      "original_severity": "P1",
+      "original_claim": "跨改码阶段的合规回溯可在不同源码基线上重新派发 Worker。",
+      "status": "NOT_FIXED",
+      "evidence": "p1/workflow.py:140-162, 167-170, 336-343",
+      "tests": "test_p019_moved_worktree_head_requires_reconciliation; test_replay_worker_after_real_remediation_commit_uses_wrong_base",
+      "assessment": "整改提交后 task.commit_sha 已推进；回溯 stage 2 时只与“当前”commit 比较，Worker 在整改后的基线上重跑，原“不同基线”问题仍存在。",
+      "minimal_fix": "为每个可改码阶段持久化“派发时输入 commit”，回溯时要求 HEAD 等于该历史 commit，否则 NEEDS_RECONCILIATION。"
+    },
+    {
+      "id": "P1-020",
+      "original_severity": "P1",
+      "original_claim": "本地 Reviewer 的结构化未解决 QUESTION 可被顶层 APPROVE 掩盖。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:276-281",
+      "tests": "test_p020_unresolved_question_wins_over_top_level_approve",
+      "assessment": "任一未 resolved 的 QUESTION 即 WAITING_CLARIFICATION。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "P1-021",
+      "original_severity": "P0",
+      "original_claim": "明确标识为模拟的数据可被集成路径重新标记为 integration 并获合规。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/executor.py:18-20, 41-48; p1/audit.py:28-34; p1/workflow.py:583-587",
+      "tests": "test_p003_and_021_integration_never_trusts_stub",
+      "assessment": "TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False；audit 拒绝 simulated payload；run() 在 integration 直接 BLOCKED。",
+      "minimal_fix": "保持阻断；见 R2-012 库级入口。"
+    },
+    {
+      "id": "P1-022",
+      "original_severity": "P1",
+      "original_claim": "Worker 与整改 Worker 不提供任何报告，仅返回 PASS 也能继续。",
+      "status": "REGRESSION",
+      "evidence": "p1/audit.py:49-52; p1/workflow.py:338-341",
+      "tests": "test_valid_no_op_reason_is_misclassified",
+      "assessment": "报告必填已生效；但新增的 no-op 关键词判定把合法理由判为无理由，重试两次后 FAILED 并耗尽全局合规预算。",
+      "minimal_fix": "删除子串匹配，改为结构化 no-op 证据；见 R2-004。"
+    },
+    {
+      "id": "P1-023",
+      "original_severity": "P2",
+      "original_claim": "角色矩阵可包含重复的盲审候选，仍通过“三个不同候选”的校验。",
+      "status": "FIXED",
+      "evidence": "p1/contracts.py:95-103; p1/a2a.py:57-67",
+      "tests": "test_p023_duplicate_blind_candidates_rejected",
+      "assessment": "三个候选、三个角色节点必须互异，且报告节点/物理 ID 去重。",
+      "minimal_fix": "已修复；物理身份不可自证。"
+    },
+    {
+      "id": "P1-024",
+      "original_severity": "P2",
+      "original_claim": "P0 返回终态 FAILED 时被当作 WAITING_EXTERNAL，恢复后继续等待。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:389-392",
+      "tests": "test_p024_terminal_a2a_failed_is_terminal",
+      "assessment": "FAILED/CANCELLED/REJECTED/EXPIRED → BLOCKED；未知状态 → 对账。",
+      "minimal_fix": "已修复；诊断字段丢失见 R2-009。"
+    },
+    {
+      "id": "P1-025",
+      "original_severity": "P2",
+      "original_claim": "包装器超时异常中已有的部分 stdout/stderr 没有落盘。",
+      "status": "FIXED",
+      "evidence": "p1/executor.py:79-88",
+      "tests": "test_p025_timeout_keeps_partial_stdout_stderr",
+      "assessment": "超时前保存部分输出与摘要。",
+      "minimal_fix": "已修复；无大小上限见 R2-008。"
+    },
+    {
+      "id": "P1-026",
+      "original_severity": "P2",
+      "original_claim": "初始化中途缺少 Soul 会留下不可重试的半成品快照。",
+      "status": "FIXED",
+      "evidence": "p1/contracts.py:135-158; p1/workflow.py:72-100",
+      "tests": "test_p026_failed_init_does_not_poison_retries",
+      "assessment": "Soul 校验先于快照发布；缺 Soul 不留快照。",
+      "minimal_fix": "已修复；DB 创建后失败残留见 R2-011。"
+    },
+    {
+      "id": "P1-027",
+      "original_severity": "P1",
+      "original_claim": "事件链已损坏时，运行入口仍继续派发角色，直到最终合规阶段才阻断。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:575-582, 597-599",
+      "tests": "test_p027_corrupt_event_journal_stops_before_dispatch",
+      "assessment": "run() 与每个 phase 前检查事件链；损坏即 BLOCKED。",
+      "minimal_fix": "已修复；resume 先写后查见 P1-015/R2-002。"
+    },
+    {
+      "id": "P1-028",
+      "original_severity": "P1",
+      "original_claim": "外部 adapter 配置及执行命令可在任务初始化后替换，而冻结快照检查仍通过。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/workflow.py:39-41, 69-85; p1/executor.py:49; p1/a2a.py:24-29",
+      "tests": "test_p028_external_adapter_config_cannot_mutate_snapshot",
+      "assessment": "正常路径下 task 指向冻结副本；但调用实际读取 task[\"adapter_config\"]，与冻结校验路径分离；可执行文件身份未绑定；integration 阻断。",
+      "minimal_fix": "固定读取 snapshots/adapters.json；见 R2-007。"
+    },
+    {
+      "id": "P1-029",
+      "original_severity": "P2",
+      "original_claim": "发给 P0 的请求未包含规格摘要或角色契约，代码没有建立替代的可信解析绑定。",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": "p1/workflow.py:373-377; p1/a2a.py:46-54",
+      "tests": "test_p029_a2a_submit_includes_approved_spec_and_souls",
+      "assessment": "请求已含 spec/souls 摘要与 blind_roles；返回 blind_roles/报告原文来源未校验；P0 schema 未定，integration 阻断。",
+      "minimal_fix": "待 P0 协议；见 R2-006。"
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "R2-001",
+      "severity": "P1",
+      "category": "code_defect",
+      "title": "Tester 考卷完整性只在 Worker 路径校验，且 Gate A 保护快照晚于本阶段提交",
+      "files": "p1/workflow.py:190-205; p1/audit.py:43-48; p1/gitops.py:37-46",
+      "evidence": "独立探针：Gate A Tester 删除/弱化基线 test_main.py 并提交后，流程仍 WAITING_GATE_5_9 + COMPLIANT；Gate B Tester 把 Gate A 受保护考卷从 73c4f17… 改为 e32287f…，protected_tests 记录的仍是旧哈希，最终仍 COMPLIANT。",
+      "impact": "测试角色可自行删除或弱化考卷，Gate A/B 的“测试证据”可被伪造为全绿，Gate 5.9 案卷仍显示合规。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_tester_can_change_or_delete_existing_exam[weaken|delete]、::test_gate_b_tester_can_weaken_gate_a_protected_exam（独立 1/5 批，均复现）。",
+      "minimal_fix": "Tester 提交只允许“新增 test 文件”；对既有 test 文件比较 before/after 内容，出现修改/删除即阻断。Gate A 结束后同时记录 before∩after 的基线考卷哈希；Gate B 与最终审计再次比对 protected_tests。"
+    },
+    {
+      "id": "R2-002",
+      "severity": "P1",
+      "category": "code_defect",
+      "title": "resume() 在完整性校验前重新封存被篡改的任务行，并使用伪造 job id",
+      "files": "p1/workflow.py:627-635; p1/state.py:53-58, 60-74",
+      "evidence": "独立探针：把 5.0 任务行 a2a_job_id 改为 TAMPERED-LOCAL-JOB 后，audit_events 报 1 个错误；resume() 先 _save(READY) 生成新事件使错误归零，随后 status 依次查询 ORIGINAL-LOCAL-JOB 与 TAMPERED-LOCAL-JOB。",
+      "impact": "有本地 DB 写权限者可清除“任务行被改”的证据，让流水线轮询攻击者指定的外部 job，最终按该 job 的结果继续。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_resume_reseals_tampered_state_before_integrity_check（独立 5 批）。前提：本地 state.sqlite 写权限；不涉及远端调用。",
+      "minimal_fix": "resume() 先执行 audit_events()/._gate02_errors()，任何错误直接 BLOCKED；校验通过后才允许状态迁移，且不要在预检前写任务行。"
+    },
+    {
+      "id": "R2-003",
+      "severity": "P1",
+      "category": "code_defect",
+      "title": "runs 记录未绑定事件链，改写 details 与原始日志后仍 COMPLIANT",
+      "files": "p1/workflow.py:448-471; p1/state.py:101-110",
+      "evidence": "独立探针：到达 Gate 5.9 后改写某 run 的 stdout 文件，并同步修改 runs.details 中 logs/invocation 的 SHA；不改任务行、payload 或 output_sha。audit_events=[]，verify_evidence=COMPLIANT。",
+      "impact": "本地执行证据可被整体替换而最终核验与导出仍通过；事件链只绑定 run_id/status/output_sha，不绑定 details/日志。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_unbound_run_metadata_can_rewrite_log_and_pass（独立 2 批）。前提：本地 DB 与日志写权限。",
+      "minimal_fix": "finish_run 事件写入 details 的 SHA（或整个 details 摘要），verify_evidence 重算并比对；日志摘要同时绑定到事件。"
+    },
+    {
+      "id": "R2-004",
+      "severity": "P1",
+      "category": "code_defect",
+      "title": "no-op 整改理由用关键词子串判定：合法理由被误杀并耗尽合规预算",
+      "files": "p1/workflow.py:338-341",
+      "evidence": "独立探针：整改报告写 “All reported issues were already resolved in the reviewed revision.”（无新提交）被判为 “no-op remediation needs explicit reason”，compliance_retraces 从 1 增至 2 后 FAILED；反之，任何含 “no p0/no-op/no defect/无缺陷/无需整改” 的文本均可通过。",
+      "impact": "合法的“已全部修复”场景被错误终止并消耗全局合规回溯预算；关键词也可被无实质证据的文本满足，不能证明无缺陷。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_valid_no_op_reason_is_misclassified（独立 2 批）。",
+      "minimal_fix": "改为结构化字段：no_op=true + 逐条缺陷已修复证据 + Reviewer/Arbitrator 复核；由 Pro-Audit 依据 diff 与缺陷清单判定，禁止子串匹配。"
+    },
+    {
+      "id": "R2-005",
+      "severity": "P2",
+      "category": "code_defect",
+      "title": "Gate 0.1 审批未绑定 12 份 Soul 内容，init 只做形状校验",
+      "files": "p1/contracts.py:106-112, 135-147; p1/workflow.py:48-95",
+      "evidence": "独立探针：用同文件名但不同内容的 planner.md 替换 souls 目录，init 接受并原样冻结（saved==text），无需改 gate01.json。",
+      "impact": "角色 Soul 是行为契约，却不在 Gate 0.1 审批摘要中；可在审批后替换为任意满足标题/长度要求的文本。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_semantically_unapproved_soul_passes_shape_check（独立 3 批）。",
+      "minimal_fix": "gate01.json 增加 souls 清单摘要（逐角色 SHA）；validate_approval 校验该摘要；或把 souls 目录哈希纳入 Gate 0.1 输入。"
+    },
+    {
+      "id": "R2-006",
+      "severity": "P2",
+      "category": "integration_gap",
+      "title": "A2A 原始传输证据未保存，返回绑定只校验部分字段",
+      "files": "p1/a2a.py:29-37, 49-54, 70-72; p1/workflow.py:398-408",
+      "evidence": "静态证据：adapter stdout 解析后丢弃原始字节，05_0_blind_review.json 写的是重新 canonical 化的对象；report 内容只做真值判断（dict/list 也可通过）；返回的 blind_roles 未与请求比对。",
+      "impact": "真实 P0 接入后无法证明远端报告原文与角色映射；报告类型异常可通过形状检查。integration 当前阻断，故未形成真实放行。",
+      "reproduction": "代码审查 + probe-copy/tests/test_round2_independent.py::test_integration_entry_and_a2a_identity_fail_closed（验证缺失 souls_sha256 被拒）。",
+      "minimal_fix": "保存 adapter 原始 stdout/stderr 与 SHA；要求 report 为 str；校验 blind_roles 与请求逐项一致、报告节点/角色一一对应。"
+    },
+    {
+      "id": "R2-007",
+      "severity": "P2",
+      "category": "code_defect",
+      "title": "冻结 adapter 校验路径与实际执行读取路径可分离",
+      "files": "p1/workflow.py:39-41, 69-85; p1/executor.py:49; p1/a2a.py:24-29",
+      "evidence": "静态证据：require_snapshot 校验 snapshots/adapters.json 的 SHA，但 invoke()/call_adapter() 读取 task[\"adapter_config\"]。将任务行指向另一本地配置时冻结检查仍通过。",
+      "impact": "获得本地 DB 写权限且 integration 启用后，可绕过 P1-028 的冻结配置保护。当前 integration 被硬阻断，故不可实际触发真实执行。",
+      "reproduction": "静态路径对照；无需运行真实 adapter。",
+      "minimal_fix": "执行入口固定读取 snapshots/adapters.json 并复核 SHA；或断言 task[\"adapter_config\"] 等于该快照路径。"
+    },
+    {
+      "id": "R2-008",
+      "severity": "P3",
+      "category": "hardening",
+      "title": "超时与正常路径的 stdout/stderr 无大小上限或截断元数据",
+      "files": "p1/executor.py:79-90",
+      "evidence": "静态证据：subprocess.run(capture_output=True) 与 atomic_write 均无上限；超时元数据只含 SHA，不含原始大小/截断标志。",
+      "impact": "异常大的子进程输出可耗尽内存/磁盘，影响可恢复性；不影响当前合规判定。",
+      "reproduction": "代码审查（未注入超大输出）。",
+      "minimal_fix": "流式读取并设上限，保存 truncated 标志与原始长度。"
+    },
+    {
+      "id": "R2-009",
+      "severity": "P3",
+      "category": "hardening",
+      "title": "A2A 终态诊断字段被丢弃，仅保存状态字符串",
+      "files": "p1/workflow.py:389-392",
+      "evidence": "静态证据：status 响应只取 state；FAILED/CANCELLED 的 diagnosis/error 字段未写入事件或 artifacts。",
+      "impact": "故障定位信息丢失，运维只能看到终态。",
+      "reproduction": "代码审查。",
+      "minimal_fix": "将脱敏后的终态响应写入事件或 artifacts，并计算 SHA。"
+    },
+    {
+      "id": "R2-010",
+      "severity": "P3",
+      "category": "hardening",
+      "title": "safety.json 未在初始化时解析，坏 JSON 直到 Phase 1 才阻断",
+      "files": "p1/workflow.py:69-77, 356-360",
+      "evidence": "静态证据：init 仅复制字节；_phase_worktree 才 read_json。坏 JSON 会使任务先 READY，后在 stage 1 转 NEEDS_RECONCILIATION。",
+      "impact": "初始化成功但不可避免地在下一阶段失败，增加无效状态。",
+      "reproduction": "代码审查。",
+      "minimal_fix": "init 时解析并校验 live_side_effects_disabled/reviewed_by，失败即拒绝初始化。"
+    },
+    {
+      "id": "R2-011",
+      "severity": "P3",
+      "category": "hardening",
+      "title": "初始化在 state.sqlite 创建后失败会留下半成品，重试被拒",
+      "files": "p1/workflow.py:92-100; p1/state.py:16-37",
+      "evidence": "独立探针：注入 Store 创建 DB 后抛 OSError；snapshots 与 state.sqlite 均残留，再次 init 报 already initialized。",
+      "impact": "罕见 I/O 故障后任务目录不可重试，需要人工清理。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_io_failure_after_sqlite_creation_poison_initialization（独立 3 批）。",
+      "minimal_fix": "先把快照发布到临时目录，DB 成功后再原子发布；或失败时仅删除本次创建的 DB 与快照。"
+    },
+    {
+      "id": "R2-012",
+      "severity": "P3",
+      "category": "hardening",
+      "title": "call_adapter 的 integration 分支缺少与 executor 同级的本地硬门禁",
+      "files": "p1/a2a.py:14-29; p1/executor.py:18-20, 41-48",
+      "evidence": "独立探针：直接调用 call_adapter(mode=integration) 会启动本地 adapter 子进程并返回 LOCAL-STUB；Pipeline.run() 的正常 integration 阻断不受影响，CLI 也未暴露该入口。",
+      "impact": "库级调用可绕过“integration 一律阻断”的约定；当前不可由 CLI 触发，属纵深防御缺口。",
+      "reproduction": "probe-copy/tests/test_round2_independent.py::test_direct_a2a_adapter_integration_not_locally_locked（独立 9 批）。",
+      "minimal_fix": "在 call_adapter 增加与 executor 相同的 TRUSTED 门禁或 mode 断言。"
+    }
+  ]
+}

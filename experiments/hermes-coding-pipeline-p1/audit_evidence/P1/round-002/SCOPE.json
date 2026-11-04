@@ -1,0 +1,61 @@
+{
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "7ef210a90bc3cd8ec3d230d1901f0fbd7715015c",
+  "audited_commit_parent": "a72e13a987ca490ec73c9c9456741c0bd4e8df39",
+  "audited_tree_sha": "8681a8bbd430984744f56e0a38448361d1ba7d59",
+  "audit_round": "round-002",
+  "audit_started_at": "2026-11-04T16:20:39+08:00",
+  "audit_completed_at": "2026-11-04T17:05:00+08:00",
+  "auditor": "Hermes ling (profile ling, 21bao), independent P1 code-audit agent",
+  "source_root": "experiments/hermes-coding-pipeline-p1/",
+  "audited_files": 45,
+  "file_scope": "P1 全部受版本管理源码、12 份 Soul、配置模板、文档与测试；不涉及现网配置、Hermes 运行配置或远端节点",
+  "test_mode": "offline_fixture 与本地隔离 Git 仓库；未启用真实 integration",
+  "environment": {
+    "os": "Windows 10",
+    "python": "3.11.15",
+    "pytest": "9.1.0",
+    "git": "2.54.0.windows.1"
+  },
+  "verdict": "FAIL",
+  "audit_status": "COMPLETE",
+  "real_21bao_integration_allowed": false,
+  "round1_dispositions": {
+    "FIXED": 15,
+    "MITIGATED_FAIL_CLOSED": 7,
+    "NOT_FIXED": 6,
+    "REGRESSION": 1,
+    "NOT_VERIFIED": 0
+  },
+  "new_findings": {
+    "P0": 0,
+    "P1": 4,
+    "P2": 3,
+    "P3": 5
+  },
+  "tests": {
+    "project_tests": 47,
+    "project_passed": 47,
+    "probe_unique_cases": 19,
+    "probe_executions": 21,
+    "unexpected_failures": 0
+  },
+  "external_network_or_real_a2a_used": false,
+  "real_paid_model_calls": 0,
+  "unverified": [
+    "真实 Codex/OpenCode 包装器、模型与网关物证",
+    "真实 P0 协议、返回角色绑定与报告原文",
+    "P0 物理身份认证与防伪 Quorum",
+    "真实测试执行收据（Gate A/B）",
+    "真实人工 Gate 0.1/0.2/5.9 身份与审批链",
+    "Windows E: 集成工作树与真实崩溃/子进程行为",
+    "真实副作用 kill guard / 生产隔离"
+  ],
+  "deliverables": [
+    "AUDIT_REPORT.md",
+    "FINDINGS.json",
+    "TEST_RESULTS.txt",
+    "SCOPE.json"
+  ]
+}
