@@ -1,0 +1,41 @@
+{
+  "scope": "Stage-2B-1 additions only: p1/runner.py, p1/winjobs.py, p1/harness/*, integrations/hermes/p1_orchestrator/*, tests/test_stage2b1_*, plus carried 38c76de trust.py/round5-stub supplementary check",
+  "audited_commit": "cc3a42cd0e5992bc64ed0bdabafd67cae71e3227",
+  "parent": "38c76de3f7e8b47951b01d430806fffe10fe1cdc",
+  "excluded": [
+    "main",
+    "historical audit reports",
+    "Hermes live config/gateways",
+    "accounts/ACL provisioning",
+    "paid models",
+    "P0/remote nodes"
+  ],
+  "methods": [
+    "git-blob snapshot + double integrity check",
+    "full project suite",
+    "49-case independent adversarial probe file",
+    "live Windows process/ACL experiments",
+    "source-level wiring grep"
+  ],
+  "files_reviewed": [
+    "experiments/hermes-coding-pipeline-p1/p1/runner.py",
+    "experiments/hermes-coding-pipeline-p1/p1/winjobs.py",
+    "experiments/hermes-coding-pipeline-p1/p1/harness/__init__.py",
+    "experiments/hermes-coding-pipeline-p1/p1/harness/codex.py",
+    "experiments/hermes-coding-pipeline-p1/p1/harness/opencode.py",
+    "experiments/hermes-coding-pipeline-p1/integrations/hermes/p1_orchestrator/__init__.py",
+    "experiments/hermes-coding-pipeline-p1/integrations/hermes/p1_orchestrator/plugin.yaml",
+    "experiments/hermes-coding-pipeline-p1/tests/test_stage2b1_runner.py",
+    "experiments/hermes-coding-pipeline-p1/tests/test_stage2b1_harness.py",
+    "experiments/hermes-coding-pipeline-p1/tests/test_stage2b1_plugin.py",
+    "experiments/hermes-coding-pipeline-p1/tests/test_remediation_round5.py",
+    "experiments/hermes-coding-pipeline-p1/docs/STAGE2B_1_IMPLEMENTATION.md",
+    "experiments/hermes-coding-pipeline-p1/docs/STAGE2B_2_PROVISIONING_PLAN.md"
+  ],
+  "verdict": {
+    "audit": "COMPLETE",
+    "code": "FAIL",
+    "stage2b2_allowed": false,
+    "p1_21bao_production": "BLOCKED - unchanged"
+  }
+}

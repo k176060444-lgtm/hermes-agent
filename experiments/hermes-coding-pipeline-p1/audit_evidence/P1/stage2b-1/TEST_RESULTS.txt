@@ -1,0 +1,40 @@
+Stage-2B-1 independent audit - test evidence (21bao Windows 10, Python 3.11.15, git version 2.54.0.windows.1)
+Fixed audited commit: cc3a42cd0e5992bc64ed0bdabafd67cae71e3227
+
+[A] Snapshot integrity
+  fetched 100/100 files via git blob API; sha1-blob recheck before suite: 0 mismatch
+  recheck after full suite: 0 mismatch (audited source untouched)
+  blob comparison vs cda5f48 snapshot: core engine files identical; 5 changed + 19 new
+
+[B] Project suite, run as-is from fixed snapshot (single process, 169.7s)
+  command: python -B -m pytest -q (probe-copy of fixed commit, audit_evidence excluded)
+  JUnit: 166 tests / 161 passed / 0 failed / 0 errors / 5 skipped
+  skipped: test_r4_002_posix_tab_filename, 3x test_r4_001 posix trust cases, test_posix_paths_fail_closed
+  DEVELOPER-REPORT CORRECTION: '161 collected/161 passed/5 skipped' is inconsistent;
+  true collection is 166 (161 passed + 5 skipped).
+  Windows-critical cases individually confirmed PASS: r5_001 x2, r6_001 x6 (incl real
+  WAL recreation 1.314s), r7_001 x4.
+
+[C] Independent auditor probes: tests/test_s2b1_independent.py, 49 unique cases
+  batch a (protocol/identity/client/ACL): 22 passed (probe-a.xml)
+  batch b/c/e (harness/plugin/carry):    46 passed (probe-bc.xml, incl a-overlap)
+  batch d (Job Object, live 21bao):       4 passed (probe-d.xml)
+  full file rerun after fixes:           49 passed / 0 failed (probe-full.xml, 3.75s)
+  all 11 Windows skipif guards active on this host (no silent skips)
+  initial 6 probe failures triaged honestly:
+    auditor-fixture errors (not product): a04 (needed identity seam), a09 (venv base
+    interpreter path), c05 (docstring negation match), c01 argv-index wording - corrected,
+    no audited source modified;
+    genuine findings surfaced by failing probes: a08->S2B1-003 (dead-pid token),
+    b04->S2B1-014 (bare KeyError), c01->S2B1-011 (init drops 7 required flags).
+    b01 passed first run and reproduced S2B1-010 (auto: allow).
+
+[D] Live Windows process experiments (one-shot, self-cleaned)
+  d01 two-generation kill via close: PASS  d02 pre-assign orphan survives: PASS(finding)
+  d03 bad pid rejected: PASS  d04 holder-crash kill: PASS
+  a08 dead-pid token readable at t+0.0/0.3/1.0/2.0s: PASS(finding)
+  a18/a19 live icacls ACL probes: PASS
+
+[E] Executor gate regression
+  TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False; raises at executor.py:121,129 intact;
+  no p1 runtime module imports runner/winjobs/harness (grep evidence).

@@ -1,0 +1,229 @@
+{
+  "audit": "Stage-2B-1",
+  "auditor": "Qwen-Flash",
+  "status": "COMPLETE",
+  "code_verdict": "FAIL",
+  "audited_commit": "cc3a42cd0e5992bc64ed0bdabafd67cae71e3227",
+  "parent": "38c76de3f7e8b47951b01d430806fffe10fe1cdc",
+  "tree": "ce01db59ed980bdd99b18685c572149163f1c5eb",
+  "round007_source": "cda5f4873c253d5926c86d84b7ada138427b9bc7",
+  "round007_report": "bc9b6cba32c79bbe1c9060332b459ae342e30fee",
+  "platform": "21bao Windows 10, Python 3.11.15, git version 2.54.0.windows.1",
+  "severity_counts": {
+    "P0": 0,
+    "P1": 3,
+    "P2": 8,
+    "P3": 5
+  },
+  "findings": [
+    {
+      "id": "S2B1-001",
+      "severity": "P1",
+      "status": "NOT_FIXED",
+      "area": "runner/identity",
+      "title": "verify_execution_identity does not force validate_launch_request/validate_receipt; expected_agent_sid is a caller-fillable field, not manifest-bound",
+      "evidence": "p1/runner.py:320-352: verify calls no validate_* anywhere. build_launch_request(:78-111) never emits expected_agent_sid; verify reads it via request.get(:330). RunnerClient.manifest() validates its own copy but verify takes no manifest parameter and never compares request['expected_agent_sid'] against it. Probes a04/a09c: with validate skipped, an unsigned request, fully misbound receipt (task/run/idempotency all wrong) and fabricated capture digests still attests.",
+      "impact": "The audit question 'Agent SID bound to trusted manifest, not caller-filled' answers NO at the verify layer: the pin is whatever the caller stuffed into the request dict. Today no dispatch path exists (executor gate intact), so not P0; becomes exploitable the moment Stage-2B-2 wires the client.",
+      "minimal_fix": "verify_execution_identity must call validate_launch_request(request) + validate_receipt(receipt, request) first, and take expected_agent_sid from a manifest argument, not the request dict."
+    },
+    {
+      "id": "S2B1-002",
+      "severity": "P1",
+      "status": "NOT_FIXED",
+      "area": "runner/identity",
+      "title": "process_alive parameter conflates liveness check with identity measurement (probe = process_alive or live_process_token)",
+      "evidence": "p1/runner.py:329,335-347. Probe a06 (21bao): passing a real liveness predicate (returns bool) crashes with TypeError('bool' object is not subscriptable); passing a dict-returning fake REPLACES the live token measurement entirely, and the same branch (:342-347) also skips live_process_image - the image is then taken from the receipt self-report.",
+      "impact": "Survival vs identity are the two things the audit brief demands be separate; one injected parameter silently changes meaning of both checks. Injection seam = bypass seam.",
+      "minimal_fix": "Split into two parameters: liveness: Callable[[int],bool] always consulted; identity probe not injectable (or injected results marked unattested). Never fall back to receipt fields for image when a probe is injected."
+    },
+    {
+      "id": "S2B1-010",
+      "severity": "P1",
+      "status": "NOT_FIXED",
+      "area": "harness/opencode",
+      "title": "render_agent_markdown accepts permissions={'auto':'allow'} and renders it, violating the declared 'auto is always denied' rule",
+      "evidence": "p1/harness/opencode.py:97-98: value = 'deny' if key in DEFAULT_DENY_PERMISSIONS and key not in perms else perms.get(key,'ask') - explicit auto bypasses the deny. Probe b01 reproduces: rendered markdown contains 'auto: allow'.",
+      "impact": "A matrix typo or tampered config lets the OpenCode agent self-approve permissions, directly contradicting module docstring (:85) and the Stage-2A design constraint. This was the specific reproduction the audit brief requested.",
+      "minimal_fix": "Emit deny unconditionally for DEFAULT_DENY_PERMISSIONS keys; raise OpenCodeProbeError if caller supplies any other value for them."
+    },
+    {
+      "id": "S2B1-003",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "runner/identity",
+      "title": "agent_pid has no liveness/instance binding: token of an exited-but-handle-held process still reads; PID reuse unguarded",
+      "evidence": "Probe a08 (21bao, timed evidence t+0.0..2.0s): after proc.wait(), winjobs.process_alive(pid)=False yet runner.live_process_token(pid) still returns the dead process SID (S-1-5-21-...-1001). verify never compares started_at/finished_at against process creation time (GetProcessTimes not used).",
+      "impact": "A receipt naming a dead or recycled pid can pass the 'live token' check while proving the identity of a different process instance.",
+      "minimal_fix": "Require liveness + process-start-time match inside verify; reject non-live pids."
+    },
+    {
+      "id": "S2B1-004",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "runner/protocol",
+      "title": "Receipt lacks model/role/reviewed_commit binding; harness_version and argv_sha256 compared against nothing",
+      "evidence": "RECEIPT_REQUIRED_FIELDS (p1/runner.py:52-59) contains no model/role/reviewed_commit/argv; validate_receipt(:131-151) never compares harness_version or argv_sha256 to the request or frozen snapshot. Probes a21/a22: a receipt generated for a different-model run validates cleanly; argv_sha256='9'*64 passes.",
+      "impact": "Cannot prove the launched process used the approved model/role/commit/argv - the core binding the audit brief lists for receipts.",
+      "minimal_fix": "Add model/role/reviewed_commit to the receipt and cross-check against request; bind argv_sha256 to build_command's command_sha256; bind harness_version to the frozen snapshot."
+    },
+    {
+      "id": "S2B1-005",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "runner/client",
+      "title": "poll() returns outbox receipt JSON without validate_receipt and without provenance",
+      "evidence": "p1/runner.py:466-467 returns read_json(receipt_path) raw. Probe a20 (21bao): junk file {'status':'COMPLETED','agent_pid':1,'anything':1} in outbox -> poll returns state=RECEIPT; validate_receipt would reject it but is never called.",
+      "impact": "Reconciliation consumes unvalidated data; whoever can write the spool outbox fabricates dispatch outcomes.",
+      "minimal_fix": "poll must validate_receipt(receipt, request) before returning and bind to manifest identity."
+    },
+    {
+      "id": "S2B1-006",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "runner/client",
+      "title": "runner_health proves manifest presence, not service liveness; docstring overstates",
+      "evidence": "p1/runner.py:427-440. Probe a15 (21bao): complete manifest + matching runner exe digest + no runner service process -> {'available': True, 'reason': 'manifest provisioned'}.",
+      "impact": "'available' invites future callers to treat provisioning as a live runner; actual blocking comes only from the unimplemented transport in launch().",
+      "minimal_fix": "Add a heartbeat probe (spool heartbeat timestamp / named event), or rename the field manifest_provisioned."
+    },
+    {
+      "id": "S2B1-007",
+      "severity": "P2",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "area": "runner/ledger",
+      "title": "verify_ledger_inaccessible inspects only the ledger ROOT DACL; independent child ACEs invisible",
+      "evidence": "Probe a19 (21bao, live icacls): root clean, child dir artifacts granted Everyone (OI)(CI)(RX) -> check passes. Code :355-372 queries once.",
+      "impact": "Same residual class as R6-002: 'DACL demonstrably excluding the agent principal' holds at root level only. Provisioning discipline (no unprotected child ACEs) bounds real risk, but the mechanism does not prove it.",
+      "minimal_fix": "Query the known ledger child paths (reuse trust.py batch ACL probe) instead of root only."
+    },
+    {
+      "id": "S2B1-008",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "harness/argv",
+      "title": "extra_argv can duplicate or override reserved flags (-m, -s, sandbox-bypass switches) without guard",
+      "evidence": "codex.py:104 / opencode.py:129 append extra_argv verbatim. Probe b05: extra_argv=['-m','unapproved-model-z','--dangerously-bypass-approvals-and-sandbox'] -> argv contains '-m' twice and the bypass flag; most CLI parsers let the later value win.",
+      "impact": "A poisoned/typoed matrix entry silently defeats the frozen model/sandbox constraints.",
+      "minimal_fix": "Reject extra_argv entries colliding with reserved flags (-m/--model/-s/--sandbox/-C/--cd/--json) or known bypass switches."
+    },
+    {
+      "id": "S2B1-009",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "harness/receipts",
+      "title": "merge_runner_records has no provenance gate: any caller-supplied list upgrades trusted; one record can validate multiple claimed invocations of the same command",
+      "evidence": "codex.py:178-195 / opencode.py:201-216: runner_records is a bare parameter with no runner signature/manifest binding. Probe b10: forged list -> trusted=True. Probe b11: dict keyed by command; a single exit-0 record marks BOTH claimed entries (from different invocations) - entry 0 trusted by a record from a different run.",
+      "impact": "The stated rule 'exit codes become trusted only when the Runner records agree' lacks an authenticated source for those records and lacks per-invocation binding.",
+      "minimal_fix": "Require runner_records to come from an attested receipt/ledger path; key by (command, invocation ordinal/pid) not command alone."
+    },
+    {
+      "id": "S2B1-016",
+      "severity": "P2",
+      "status": "NOT_FIXED",
+      "area": "winjobs",
+      "title": "Job assignment race: descendants born before assign_pid escape the job and survive terminate/close",
+      "evidence": "Probe d02 (21bao, live): parent spawns grandchild BEFORE job.assign_pid(parent) -> TerminateJobObject kills parent, grandchild still alive (verified, then cleaned via taskkill). winjobs.py offers no CREATE_SUSPENDED/assign-before-resume helper.",
+      "impact": "When the Runner Popen-spawns the harness, early-forked children escape the kill boundary - the residual window of the R2-008 descendant-tree issue. Mechanism itself works (d01/d04 pass: two-generation kill and holder-crash kill both verified).",
+      "minimal_fix": "Provide a suspended-spawn + assign-then-resume wrapper; or nested job / process-notification registration."
+    },
+    {
+      "id": "S2B1-011",
+      "severity": "P3",
+      "status": "NOT_FIXED",
+      "area": "plugin",
+      "title": "p1_init handler forwards only --home, dropping the other 7 required init flags; init can never succeed",
+      "evidence": "integrations/hermes/p1_orchestrator/__init__.py:133-139 _simple_handler uses _require_home only, while the schema (:100-110) declares 8 required fields. Probe c01 (21bao): forwarded argv tail == ['--home', home]; CLI rc=2 surfaced honestly.",
+      "impact": "Functional defect in the uninstalled draft; fails closed (CLI refuses), so non-blocking.",
+      "minimal_fix": "Dedicated init handler mapping task_id/intent/matrix/gate01/souls/project_root/worktree."
+    },
+    {
+      "id": "S2B1-012",
+      "severity": "P3",
+      "status": "NOT_FIXED",
+      "area": "plugin",
+      "title": "_invoke caps stderr at 500 chars but leaves stdout unbounded",
+      "evidence": "Probe c04: 5 MB stdout passes into result dict verbatim (__init__.py:58-67).",
+      "impact": "Abnormal CLI output can balloon memory/session context; inconsistent with P1 bounded-capture principle.",
+      "minimal_fix": "Cap stdout with truncation marker."
+    },
+    {
+      "id": "S2B1-013",
+      "severity": "P3",
+      "status": "NOT_FIXED",
+      "area": "harness/opencode",
+      "title": "bash events without a command field yield a literal 'None' command record",
+      "evidence": "opencode.py:193 str(command); probe b12.",
+      "impact": "Ghost 'None' commands pollute the evidence stream and reconciliation.",
+      "minimal_fix": "Skip non-str commands or tag them no-command."
+    },
+    {
+      "id": "S2B1-014",
+      "severity": "P3",
+      "status": "NOT_FIXED",
+      "area": "harness/opencode",
+      "title": "build_command raises bare KeyError on missing request['role'] before model validation",
+      "evidence": "opencode.py:115; probe b04 final segment.",
+      "impact": "Uncontrolled exception type loses the error semantics; still no dispatch.",
+      "minimal_fix": "Raise OpenCodeProbeError for missing role."
+    },
+    {
+      "id": "S2B1-015",
+      "severity": "P3",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "area": "runner/protocol",
+      "title": "validate_receipt does not cross-check status against exit_code",
+      "evidence": "Probe a13b: FAILED+exit0, COMPLETED+exit1, KILLED+exit0 all validate.",
+      "impact": "Semantically contradictory receipts can be stored; downstream readers trusting status alone are misled.",
+      "minimal_fix": "COMPLETED requires exit 0; FAILED/TIMEOUT/KILLED require nonzero/timeout markers."
+    }
+  ],
+  "carry_review": [
+    {
+      "id": "R7-001/38c76de",
+      "status": "VERIFIED_CARRY",
+      "note": "trust.py protected_root is path-identified (normcase+abspath), required exactly once, root record matched by path not position; r7_001 x4 + r6_001 x6 + r5_001 x2 all PASS in auditor-run Windows suite; real WAL recreation test ran 1.314s PASS. No relaxation found."
+    },
+    {
+      "id": "round5-stub-fix",
+      "status": "ACCEPTED_TOOLING",
+      "note": "test_remediation_round5.py stub widened to **kwargs only; still asserts the same inspected-name set; no product semantics changed."
+    },
+    {
+      "id": "executor-gate",
+      "status": "INTACT",
+      "note": "TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False; both raises present (executor.py:121,129); grep proves runner/winjobs/harness are NOT imported by any p1 runtime module - pure library, zero dispatch path."
+    },
+    {
+      "id": "R5-005",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "note": "no provisioned agentx identity/service; runner layer is offline contract only."
+    },
+    {
+      "id": "R2-006",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "note": "P0/A2A untouched; no transport, no physical identity."
+    }
+  ],
+  "not_verified": [
+    "runner service/transport (deliberately unimplemented)",
+    "agentx account + live separate-identity attestation",
+    "real Codex/OpenCode event schema vs installed CLIs",
+    "real model/test execution receipts",
+    "P0 A2A transport & physical identity (R2-006)",
+    "gateway plugin installation + approval identity binding",
+    "production E: worktree lifecycle"
+  ],
+  "test_stats": {
+    "collected": 166,
+    "passed": 161,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 5,
+    "skipped_reason": "POSIX-only cases",
+    "independent_probes": {
+      "unique": 49,
+      "executed": 49,
+      "passed": 49
+    }
+  }
+}
