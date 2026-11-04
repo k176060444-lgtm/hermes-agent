@@ -1,0 +1,88 @@
+{
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audit_round": "round-004",
+  "audited_commit_sha": "888470d661085ee7a183184a74bf3b5a6cf6f556",
+  "audited_commit_parent": "e544d5e0cc1471c7844baf5c6f0ba10dbbd3db81",
+  "audited_tree_sha": "51b57146d1ad4848347269c0ceb95fa664028dab",
+  "previous_audit_report_commit": "e544d5e0cc1471c7844baf5c6f0ba10dbbd3db81",
+  "audit_started_at": "2026-11-04T18:20:00+08:00",
+  "audit_completed_at": "2026-11-04T19:40:00+08:00",
+  "auditor": "Hermes ling (profile ling, 21bao), independent P1 code-audit agent",
+  "source_root": "experiments/hermes-coding-pipeline-p1/",
+  "audited_files": 59,
+  "file_scope": "本轮变更模块 p1/gitops.py、p1/state.py、p1/workflow.py 与新增 tests/test_remediation_round3.py；并对未改动模块做继承回归；不涉及现网配置、Hermes 运行配置或远端节点",
+  "test_mode": "offline_fixture + 本地一次性 Git 仓库；integration 保持硬阻断",
+  "environment": {
+    "os": "Windows 10",
+    "python": "3.11.15",
+    "pytest": "9.1.0",
+    "git": "2.54.0.windows.1"
+  },
+  "verdict": "CONDITIONAL",
+  "audit_status": "COMPLETE",
+  "real_21bao_integration_allowed": false,
+  "summary": {
+    "round3_targets_total": 3,
+    "target_status_counts": {
+      "FIXED": 3,
+      "MITIGATED_FAIL_CLOSED": 0,
+      "NOT_FIXED": 0,
+      "REGRESSION": 0,
+      "NOT_VERIFIED": 0
+    },
+    "carried_known_total": 2,
+    "carried_status_counts": {
+      "FIXED": 0,
+      "MITIGATED_FAIL_CLOSED": 1,
+      "NOT_FIXED": 1,
+      "REGRESSION": 0,
+      "NOT_VERIFIED": 0
+    },
+    "new_findings_total": 3,
+    "new_severity_counts": {
+      "P0": 0,
+      "P1": 1,
+      "P2": 0,
+      "P3": 2
+    }
+  },
+  "tests": {
+    "project_tests": 93,
+    "project_passed": 93,
+    "project_batches": 12,
+    "probe_unique_cases": 31,
+    "probe_executions": 33,
+    "probe_failures": 0,
+    "unexpected_product_failures": 0,
+    "superseded_probe_runs": [
+      "testlogs/g1.xml",
+      "testlogs/g2.xml",
+      "testlogs/g4.xml"
+    ]
+  },
+  "external_network_or_real_a2a_used": false,
+  "real_paid_model_calls": 0,
+  "conditions_for_real_run": [
+    "R4-001 必须落实为强制执行的信任边界（链外签名/HMAC 或 OS 权限隔离 + 明示威胁模型）",
+    "R4-002、R4-003 修复",
+    "R2-008 流式限长在真实长时运行前完成",
+    "真实 Codex/OpenCode 物证、测试执行收据、P0 协议与物理身份、人工审批身份、Windows E: 工作树与 kill guard 完成集成验证"
+  ],
+  "unverified": [
+    "真实 Codex/OpenCode 包装器、模型与网关物证",
+    "真实 P0 协议、原始传输收据、返回角色/主机绑定",
+    "P0 物理身份认证与防伪 Quorum",
+    "真实测试执行收据（Gate A/B）",
+    "真实人工 Gate 0.1/0.2/5.9 身份与审批链",
+    "Windows E: 集成工作树、真实崩溃/孙进程/kill 行为",
+    "真实副作用 kill guard / 生产隔离",
+    "对拥有本地任务库写权限者的外部信任锚（本轮已给出可复现证据，见 R4-001）"
+  ],
+  "deliverables": [
+    "AUDIT_REPORT.md",
+    "FINDINGS.json",
+    "TEST_RESULTS.txt",
+    "SCOPE.json"
+  ]
+}

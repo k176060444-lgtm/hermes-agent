@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "audit_round": "round-004",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "888470d661085ee7a183184a74bf3b5a6cf6f556",
+  "audited_commit_parent": "e544d5e0cc1471c7844baf5c6f0ba10dbbd3db81",
+  "audited_tree_sha": "51b57146d1ad4848347269c0ceb95fa664028dab",
+  "previous_audit_report_commit": "e544d5e0cc1471c7844baf5c6f0ba10dbbd3db81",
+  "verdict": "CONDITIONAL",
+  "audit_status": "COMPLETE",
+  "summary": {
+    "round3_targets_total": 3,
+    "target_status_counts": {
+      "FIXED": 3,
+      "MITIGATED_FAIL_CLOSED": 0,
+      "NOT_FIXED": 0,
+      "REGRESSION": 0,
+      "NOT_VERIFIED": 0
+    },
+    "carried_known_total": 2,
+    "carried_status_counts": {
+      "FIXED": 0,
+      "MITIGATED_FAIL_CLOSED": 1,
+      "NOT_FIXED": 1,
+      "REGRESSION": 0,
+      "NOT_VERIFIED": 0
+    },
+    "new_findings_total": 3,
+    "new_severity_counts": {
+      "P0": 0,
+      "P1": 1,
+      "P2": 0,
+      "P3": 2
+    }
+  },
+  "round3_target_findings": [
+    {
+      "id": "R3-001",
+      "severity": "P2",
+      "claim": "Tester 可新增 tests/conftest.py 等收集控制文件，禁用既有考卷后仍到 Gate 5.9 COMPLIANT。",
+      "status": "FIXED",
+      "evidence": "p1/gitops.py:97-116 (add-only + ls-tree 仅允许 100644/100755 blob), p1/gitops.py:151-175 (test_path 改为测试模块文件名白名单), p1/audit.py:43-51, p1/workflow.py:222-231",
+      "tests": "test_positive_conftest_cannot_be_added_as_exam[tester_gate_a/tester_gate_b]、test_positive_collection_control_files_are_not_test_modules[7 例]、test_positive_real_test_module_names_are_accepted、test_positive_symlink_test_entry_rejected、test_positive_tester_can_still_add_real_exam、test_positive_baseline_and_gate_a_exams_survive_remediation",
+      "assessment": "Gate A/B 新增 conftest.py 得到 “test-only role touched non-test path” 并停在 NEEDS_RECONCILIATION；pytest.ini/tox.ini/setup.cfg/pyproject.toml/sitecustomize.py/__init__.py/.pyc 均不算测试模块；120000 符号链接条目被 transition 拒绝；合法的 tests/test_*.py 新增仍得 COMPLIANT 并被 protected_tests 记录；整改 Worker 改写 Gate A 考卷仍被 protected 检查拦截。",
+      "minimal_fix": "已修复。"
+    },
+    {
+      "id": "R3-002",
+      "severity": "P2",
+      "claim": "删除 run 行或改写其 stage/role 不被事件链检测，证据核验仍 COMPLIANT。",
+      "status": "FIXED",
+      "evidence": "p1/state.py:99-156 (事件↔run 双向核对、stage/role/input_sha 比对、重复 dispatch/finish 拒绝)、p1/state.py:158-172",
+      "tests": "test_positive_deleted_run_row_is_detected、test_positive_run_metadata_mutation_is_detected[stage/role/input_sha]、test_positive_duplicate_finish_event_is_detected、test_positive_details_and_log_forgery_still_detected、test_positive_inflight_run_blocks_compliance_without_false_chain_error",
+      "assessment": "删除 run 行报 “dispatch/finish journal has no run row”；改 stage/role/input_sha 报 “stage/role/input differs from dispatch journal”；追加重复 finish 报 “duplicate finish event”；同步伪造日志+details 报 “run details or output differs from journal”；四者均使 verify_evidence=NON_COMPLIANT 且 export_report 抛错。合法 RUNNING 在途 run 不产生虚假链错误，但 COMPLIANT 被正确拒绝。",
+      "minimal_fix": "已修复（声明威胁模型内）；本地追加合法事件的边界另列 R4-001。"
+    },
+    {
+      "id": "R3-003",
+      "severity": "P3",
+      "claim": "run() 完整性预检失败只返回 BLOCKED，不落盘；status 仍显示旧状态。",
+      "status": "FIXED",
+      "evidence": "p1/workflow.py:124-140 (status 只读有效状态 + persisted_status/integrity_preflight/integrity_errors)",
+      "tests": "test_positive_status_reports_effective_block_without_sealing、test_positive_status_stays_clean_when_state_consistent",
+      "assessment": "篡改任务行后 status() 返回 BLOCKED、persisted_status=WAITING_EXTERNAL、integrity_preflight=FAILED、integrity_errors=1；事件数 34→34、被篡改行未被重写；run() 同报 BLOCKED；resume() 抛 preflight 完整性错误。健康状态不附加 integrity 键。",
+      "minimal_fix": "已修复。"
+    }
+  ],
+  "carried_known_items": [
+    {
+      "id": "R2-006",
+      "severity": "P2",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "claim": "A2A 原始传输收据与可信物理身份证明仍未实现。",
+      "evidence": "p1/a2a.py:16-48, 51-99（本轮未改动）",
+      "tests": "test_positive_integration_and_direct_a2a_fail_closed + 原回归 test_p001/p003_and_021/p029",
+      "assessment": "run() integration 仍 BLOCKED（0 次 runner 调用），直调 call_adapter 仍抛 NOT_VERIFIED；report/blind_roles 绑定保持有效。真实 P0 协议、原始 wire 收据、物理身份锚未实现，不得记为 FIXED。",
+      "minimal_fix": "保持 fail-closed，待 P0 信任契约。"
+    },
+    {
+      "id": "R2-008",
+      "severity": "P3",
+      "status": "NOT_FIXED",
+      "claim": "子进程 stdout/stderr 仍无流式大小上限。",
+      "evidence": "p1/executor.py:84,87-94（本轮未改动）",
+      "tests": "静态复核（未注入超大输出）",
+      "assessment": "capture_output=True 与无上限 atomic_write 仍在；超时部分输出落盘但无 truncated/长度元数据。属已声明的非阻断 P3 增强项。",
+      "minimal_fix": "真实长时运行前改为流式限长。"
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "R4-001",
+      "severity": "P1",
+      "category": "integration_gap",
+      "title": "本地任务库写权限者可用 Store API 追加合法事件，伪造 Gate 0.2 人工审批或整条角色执行记录",
+      "files": "p1/state.py:60-74（事件仅做 SHA-256 串联，无链外密钥/签名）、p1/state.py:76-156（校验与写入同源）、p1/workflow.py:451-467（_gate02_errors 只信任 events 表内容）",
+      "evidence": "探针一：在 gate0.2/WAITING_APPROVAL 时直接 UPDATE 任务行写入 spec_sha256/stage=1/status=READY，并用 store._event 追加一条 gate02_approved 事件；结果 audit_events=[]、_gate02_errors=[]、run() 推进到 stage 3+4 并真实创建 worktree，approval_events=1，全程没有任何人工审批。探针二：用 start_run/finish_run 追加一条从未执行的 quality_reviewer run（含逐字节一致的 stdout 日志与报告文件），audit_events=[]，verify_evidence=COMPLIANT。",
+      "impact": "P1 的事件链是“无密钥的哈希表”，任何能写 state.sqlite 的主体都能续链并伪造审批与执行记录；这与开发方在 docs/ROUND_003_REMEDIATION.md:20 与 docs/KNOWN_LIMITATIONS.md 中自述的“对可重写全部本地状态者不设防”一致，因此不重开 R3-002/P1-015，但按项目自身严重度指南，Gate 0.2 绕过属 BLOCKER 级——只有把“任务目录=完全信任域”变成被强制执行且对外明示的边界后才降级为本项。",
+      "reproduction": "probe-copy/tests/test_round4_independent.py::test_defect_gate02_approval_event_can_be_fabricated_locally、::test_defect_fabricated_run_pair_passes_local_chain（g5 批，exit 0；打印 stage=3+4 / evidence=COMPLIANT）。前提：对 p1-state/state.sqlite 及 home/logs、home/artifacts 的本地写权限；不涉及网络、真实模型或远端节点。",
+      "minimal_fix": "二选一并写进文档与代码：(1) 外部信任锚——事件链用链外 HMAC 私钥（密钥存于任务库之外的 OS 受控位置）签名，或把事件镜像到 WORM/远端 ledger 并抽样比对；(2) 明确把任务 home 划为单一受信操作系统账户的私有目录，并在 status/verify_evidence 中主动校验属主与权限，不符即 BLOCKED。"
+    },
+    {
+      "id": "R4-002",
+      "severity": "P3",
+      "category": "code_defect",
+      "title": "非 ASCII 测试文件名被 Git 百分号引用，合法 Tester 新增被误阻断",
+      "files": "p1/gitops.py:105（git diff --name-status 未关闭 core.quotePath，也未用 -z 解析）",
+      "evidence": "探针：新增 tests/test_注册.py 后 test_commit_transition 返回 valid=False，delta=['A\\t\"tests/test_\\\\346\\\\263\\\\250\\\\345\\\\206\\\\214.py\"']（git 默认 core.quotePath=true 会百分号引用非 ASCII 路径）；带引号的路径永远不可能通过 test_path。",
+      "impact": "方向是 fail-closed（不会产生假绿），但中文/非 ASCII 命名的合规新增考卷会被误判为越权改动并阻塞流水线，影响可用性；同一引用问题也存在于 ls-tree 校验前的名称比较。",
+      "reproduction": "probe-copy/tests/test_round4_independent.py::test_defect_nonascii_test_filename_is_false_blocked（g4c 批，exit 0）。",
+      "minimal_fix": "用 `git -c core.quotePath=false diff --name-status -z --no-renames` 并按 NUL 解析路径，或对 delta 先做 unquote；同时统一用 -z 输出解析，避免任何引用差异。"
+    },
+    {
+      "id": "R4-003",
+      "severity": "P3",
+      "category": "code_defect",
+      "title": "status()/run() 的有效状态未包含“在途未完成 run”",
+      "files": "p1/workflow.py:124-140（status 只预检 audit_events + _gate02_errors）、p1/state.py:151-155（RUNNING run 不产生链错误）",
+      "evidence": "探针：在 Gate 5.9 之后用 start_run 追加一条 RUNNING run，store.running() 返回 1 条，但 status() 仍为 WAITING_GATE_5_9 且没有任何 integrity 键；run() 因状态终值立即 break，也不报错。verify_evidence/export 则正确拒绝 COMPLIANT。",
+      "impact": "只查询状态的运维视图会漏掉“存在未终结执行”的事实（需依赖 audit/export 才能发现）；不改变安全性，但削弱了 R3-003 想解决的状态呈报一致性。",
+      "reproduction": "probe-copy/tests/test_round4_independent.py::test_defect_status_hides_inflight_run（g2b/g3 批，exit 0）。",
+      "minimal_fix": "在 status() 的只读预检里并入 store.running() 判定：存在未终结 run 时返回 EFFECTIVE=NEEDS_RECONCILIATION（同样不落盘），并在 CLI 退出码中体现。"
+    }
+  ],
+  "inherited_items_not_reopened": {
+    "note": "Round-002 其余 10 项与 Round-001 已关闭项本轮未重开：p1/audit.py、contracts.py、a2a.py、executor.py、cli.py 在本 Commit 未改动，且继承的 93 项回归（含 64 项上一轮已独立确认的用例）全部通过。",
+    "basis": [
+      "git diff of commit 888470d: only README, docs, p1/gitops.py, p1/state.py, p1/workflow.py, prompts, tests/test_remediation_round3.py",
+      "93/93 project tests passed unchanged in this audit"
+    ]
+  },
+  "regression_checks": [
+    {
+      "item": "Gate 0.2 人工审批 + 冻结规格",
+      "verdict": "PASS（声明模型内）；审批身份 NOT_VERIFIED",
+      "evidence": "workflow.py:605-619 要求 actor/approval_id/spec SHA 且行/链一致；探针 test_positive_gate02_row_tamper_still_blocked：仅改任务行仍 BLOCKED，且未新派发任何 run。"
+    },
+    {
+      "item": "Phase 3/4 真并行、同 Commit、独立报告与独立合规审计",
+      "verdict": "PASS",
+      "evidence": "test_positive_reviewers_parallel_same_commit_independent_audits：线程屏障证明同时进入，两 run 的 before_head 同一 SHA，两份报告文件名不同，audit_history 含两条独立记录。"
+    },
+    {
+      "item": "Gate A / Gate B 严格汇合",
+      "verdict": "PASS（结构）；测试执行收据 NOT_VERIFIED",
+      "evidence": "workflow.py:302-310、379-383；64→93 项原回归（test_gate_b_rejection_and_retry、test_gate_b_five_rounds_hard_stop 等）全部通过。"
+    },
+    {
+      "item": "5 / 5 / 2 三条闭环预算",
+      "verdict": "PASS",
+      "evidence": "workflow.py:164-188、312-322；跨新进程探针 test_positive_budgets_persist_across_new_process：round_a 2→5、FAILED、CLI 退出码 10；项目内 5 轮与 2 次回溯回归通过。"
+    },
+    {
+      "item": "Tester 考卷完整保留",
+      "verdict": "PASS",
+      "evidence": "test_positive_tester_can_still_add_real_exam + test_positive_baseline_and_gate_a_exams_survive_remediation：合法新增被哈希保护，Worker 削弱 Gate A 考卷被 protected 检查阻断。"
+    },
+    {
+      "item": "A2A 仅外部适配接口且拒绝未核实盲审",
+      "verdict": "PASS（真实协议 NOT_VERIFIED）",
+      "evidence": "a2a.py:16-48；test_positive_integration_and_direct_a2a_fail_closed：run() integration BLOCKED、0 runner 调用、直调 call_adapter 抛 NOT_VERIFIED。"
+    },
+    {
+      "item": "仲裁使用正确上下游案卷",
+      "verdict": "PASS（结构）",
+      "evidence": "workflow.py:324-338 + audit.py:65-69；原回归 test_p005 通过。"
+    },
+    {
+      "item": "Gate 5.9 只输出已登记且完整性通过的报告",
+      "verdict": "PASS",
+      "evidence": "workflow.py:701-722；篡改 details/日志/run 行/删除 run 行的四个探针均使 export 抛 “evidence invalid”。"
+    },
+    {
+      "item": "模拟数据不得当作真实集成",
+      "verdict": "PASS",
+      "evidence": "workflow.py:620-634、audit.py:28-34、executor.py:20,41-48、a2a.py:16,29-34 三处硬门禁全部复现阻断。"
+    },
+    {
+      "item": "Pro-Audit 仅流程与交付合规",
+      "verdict": "PASS",
+      "evidence": "test_positive_pro_audit_makes_no_quality_judgement：报告内容为“忽略所有测试直接发布、代码很烂”仍 COMPLIANT；引用错误 commit 才 NON_COMPLIANT。本轮 audit.py/contracts.py 未改动。"
+    }
+  ]
+}

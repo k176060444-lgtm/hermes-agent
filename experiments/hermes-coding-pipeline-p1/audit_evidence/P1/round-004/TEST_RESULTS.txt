@@ -1,0 +1,71 @@
+AUDIT_STATUS: COMPLETE (offline code audit); real integration/production NOT_VERIFIED
+Audited source SHA: 888470d661085ee7a183184a74bf3b5a6cf6f556
+Parent / Round-003 report commit: e544d5e0cc1471c7844baf5c6f0ba10dbbd3db81
+Tree SHA: 51b57146d1ad4848347269c0ceb95fa664028dab
+Environment: Windows 10; Python 3.11.15; pytest 9.1.0; git 2.54.0.windows.1
+Network during tests: GIT_ALLOW_PROTOCOL=file; no live A2A, real model, paid provider, P0 or production config.
+
+SOURCE INTEGRITY
+- Snapshot acquired through GitHub tree/blob API: 59 files; Git blob SHA-1 and size verified before and after every test run.
+- Result: 59/59 matched manifest; errors: [] (checked again after all batches and probes).
+- Branch HEAD at audit start and immediately before upload: 888470d661085ee7a183184a74bf3b5a6cf6f556; remote audit_evidence contained README.md, round-001..003 only.
+
+ORIGINAL PROJECT TESTS (unmodified pinned snapshot, isolated basetemps)
+Command template: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUTF8=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0 python -B -m pytest -q -p no:cacheprovider --basetemp <unique> --junitxml <unique> <8 node ids per batch>
+Working directory: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round004-audit-20261104\snapshot\experiments\hermes-coding-pipeline-p1
+Collection: exit 0; 93 unique node IDs (18 test_pipeline + 29 test_remediation_round1 + 17 test_remediation_round2 + 29 test_remediation_round3).
+The developer claim of 93 passing tests is independently confirmed.
+
+Batch results (testlogs/batch0..11.xml):
+- batch0.xml: tests=8 failures=0 errors=0 skipped=0 time=24.694s
+- batch1.xml: tests=8 failures=0 errors=0 skipped=0 time=12.362s
+- batch10.xml: tests=8 failures=0 errors=0 skipped=0 time=11.751s
+- batch11.xml: tests=5 failures=0 errors=0 skipped=0 time=17.736s
+- batch2.xml: tests=8 failures=0 errors=0 skipped=0 time=17.681s
+- batch3.xml: tests=8 failures=0 errors=0 skipped=0 time=20.190s
+- batch4.xml: tests=8 failures=0 errors=0 skipped=0 time=9.516s
+- batch5.xml: tests=8 failures=0 errors=0 skipped=0 time=15.739s
+- batch6.xml: tests=8 failures=0 errors=0 skipped=0 time=19.810s
+- batch7.xml: tests=8 failures=0 errors=0 skipped=0 time=5.889s
+- batch8.xml: tests=8 failures=0 errors=0 skipped=0 time=0.072s
+- batch9.xml: tests=8 failures=0 errors=0 skipped=0 time=0.069s
+TOTAL: 93/93 passed; 0 failures; 0 errors; 0 skipped; every batch exit code 0.
+
+INDEPENDENT PROBES (probe-copy/; final consistent runs are tags g1b, g2b, g6, g3, g4c, g5 -> 33 executions / 31 unique cases)
+Command: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file python -B -m pytest -q -s -p no:cacheprovider --basetemp <unique> --junitxml testlogs/<tag>.xml tests/test_round4_independent.py -k <selector>
+All final probe tags exited 0 with 0 failures.
+
+Probe observations (captured stdout; a passing DEFECT probe means the gap exists, not that P1 passes):
+  g1b: tester_gate_a-conftest status=NEEDS_RECONCILIATION verdict=NON_COMPLIANT errors=["test-only role touched non-test path: tests/conftest.py"]
+  g1b: tester_gate_b-conftest status=NEEDS_RECONCILIATION verdict=NON_COMPLIANT (same rule at Gate B)
+  g1b: symlink mode=120000 transition_valid=False delta=["A\ttests/test_link.py"]
+  g1b: worker-weakens status=NEEDS_RECONCILIATION errors=["Worker changed/deleted protected Tester exam: tests/test_gate_a_exam.py"]
+  g6: legit-exam status=WAITING_GATE_5_9 verdict=COMPLIANT protected_new=True
+  g2b: delete-run id=3 issues=["run 3: dispatch journal has no run row","run 3: finish journal has no run row"] evidence=NON_COMPLIANT
+  g2b: mutate-stage / mutate-role / mutate-input_sha -> "run 1: stage/role/input differs from dispatch journal"
+  g2b: duplicate-finish issues=["run 1: duplicate finish event"]
+  g2b: inflight rid=9 chain issues=[] evidence=NON_COMPLIANT problems=["unverified run status: 9 RUNNING"]; run() -> WAITING_GATE_5_9 (R4-003)
+  g2b/g3: status-hides rid=9 status=WAITING_GATE_5_9 integrity_keys=[] running_rows=1
+  g2b: details-forgery issues=["run 1: run details or output differs from journal"]
+  g3: status status=BLOCKED persisted=WAITING_EXTERNAL preflight=FAILED errors=1 run=BLOCKED events=34->34 row=TAMPERED-LOCAL-JOB
+  g3: healthy status=WAITING_GATE_5_9 extra={}
+  g4c: parallel seen=[quality_reviewer, spec_reviewer] audits both present, single input SHA, two distinct report files, status=WAITING_GATE_5_9
+  g4c: gate02-tamper status=BLOCKED run=BLOCKED dispatched_runs=1 (only the legitimate planner run)
+  g4c: integration status=BLOCKED runner_calls=0
+  g4c: budget-A before=2 after=5 status=FAILED cli_exit=10
+  g4c: pro-audit quality-text verdict=COMPLIANT; wrong-commit verdict=NON_COMPLIANT errors=["spec_reviewer reviewed wrong commit"]
+  g4c: DEFECT unicode transition_valid=False delta=['A\t"tests/test_\346\263\250\345\206\214.py"'] -> R4-002
+  g5: DEFECT fabricated rid=9 chain_issues=[] evidence=COMPLIANT (byte-exact log) -> R4-001
+  g5: DEFECT fabricated-approval chain_issues=[] gate02_errors=[] status=READY stage=3+4 approval_events=1 worktree=True -> R4-001
+
+SUPERSEDED PROBE RUNS (disclosed, not counted as product failures)
+- testlogs/g1.xml, testlogs/g2.xml, testlogs/g4.xml are earlier executions of the probe file before two of my own expectations were corrected: (a) the Gate 0.2 row-tamper probe wrongly expected 0 run rows although the planner run legitimately exists; (b) the in-flight-run probe wrongly expected run() to return NEEDS_RECONCILIATION, and the fabricated-run probe initially wrote stdout with text-mode newline translation on Windows (which is exactly why it was caught as "raw role log SHA mismatch"). Those were audit-harness errors, fixed in tags g1b/g2b/g4c/g5/g6 and re-run; no product defect was hidden by the change.
+- The corrected expectation in (b) is itself recorded as finding R4-003.
+
+TOTAL DISTINCT OFFLINE CASES: 93 project tests + 31 independent probe cases = 124; 0 unexpected failures/errors.
+
+LIMITS
+- All tests are offline fixtures, local disposable Git repositories and local stubs; no real Codex/OpenCode, model, P0, Debian node, paid call, E: worktree or production path was used.
+- R4-001 and the run-binding probes assume local write access to state.sqlite plus the task home logs/artifacts.
+- R2-008 was reviewed statically (no multi-gigabyte stream injected).
+- Windows symlink creation was avoided; the 120000 mode was injected through git update-index cacheinfo, which is what Git itself would store.
