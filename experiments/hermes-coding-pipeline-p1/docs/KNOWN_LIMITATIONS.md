@@ -69,3 +69,26 @@ individual evidence-file ACLs) remains informational and is not silently
 claimed fixed. Neither change solves the same-SID actor problem: R5-005 stays
 `MITIGATED_FAIL_CLOSED`, real Agent execution is forbidden, and R2-006
 trusted external A2A receipts remain pending.
+
+### Round-007 audit / Round-008 candidate
+
+The independent Qwen-Flash Round-007 audit (`bc9b6cba32c79bbe1c9060332b459ae342e30fee`)
+confirmed R6-001 **FIXED** with real 21bao Windows NTFS + SQLite WAL close/reopen
+recreation evidence (12/12 independent lifecycle cases and the designated
+Windows pytest both passed). R6-002 remains a documented P3 observation:
+individual files nested inside evidence directories are not separately
+enumerated for independent DACLs; parent-directory trust, traversal controls,
+and content-hash binding are the current mitigations. R7-001 was a P3
+maintainability observation: `_windows_validate` treated `paths[0]` as the root.
+The Round-008 candidate passes the protected root explicitly and identifies it
+by normalized path, so root enforcement no longer depends on list position.
+This candidate has only been tested in the current Linux offline environment;
+Qwen-Flash must independently verify it, including the Windows ACL test suite.
+
+R5-005 remains `MITIGATED_FAIL_CLOSED`: there is no authenticated separate-OS-
+identity Agent runner, and same-SID processes remain inside the trusted
+computing base. R2-006 remains `MITIGATED_FAIL_CLOSED`: trusted P0/A2A wire
+receipts and physical-node attestation are not implemented. Real Harness/model
+invocation, test receipts, approval identity, Windows E: worktree, descendant
+process-tree termination, and production kill guard remain NOT_VERIFIED.
+Real integration must remain disabled.

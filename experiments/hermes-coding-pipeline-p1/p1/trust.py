@@ -44,7 +44,12 @@ ConvertTo-Json -InputObject @($all) -Compress -Depth 4
 '''
 
 
-def _windows_validate(paths: list[Path]) -> None:
+def _windows_path_key(value: str | Path) -> str:
+    """Normalize a Windows path for identity comparisons, not authorization."""
+    return os.path.normcase(os.path.abspath(os.fspath(value)))
+
+
+def _windows_validate(paths: list[Path], *, protected_root: Path) -> None:
     # PS is query-only. P1 never silently rewrites a user's NTFS ACLs.
     import base64
     # -EncodedCommand does not reliably forward trailing argv as $args in all
@@ -63,9 +68,13 @@ def _windows_validate(paths: list[Path]) -> None:
         data = json.loads(result.stdout)
         if not isinstance(data, list) or len(data) != len(paths):
             raise ValueError('unexpected ACL result cardinality')
+        root_key = _windows_path_key(protected_root)
+        if sum(_windows_path_key(path) == root_key for path in paths) != 1:
+            raise TrustBoundaryError('protected root must appear exactly once in ACL request')
         for index, rec in enumerate(data):
             if not isinstance(rec, dict) or rec.get('path') != str(paths[index]):
                 raise ValueError('ACL response does not match requested path')
+            record_is_root = _windows_path_key(rec['path']) == root_key
             # R6-001: The ledger root is a protected NTFS trust boundary.
             # SQLite naturally creates state.sqlite/-wal/-shm with inherited
             # *owner-only* ACEs. WAL files may disappear/reappear on every
@@ -73,7 +82,7 @@ def _windows_validate(paths: list[Path]) -> None:
             # makes an otherwise securely provisioned Windows task unusable.
             # Enforce a protected root and inspect EFFECTIVE allowed principals
             # and owner on every existing ledger/evidence child instead.
-            if index == 0 and not rec.get('acl_protected'):
+            if record_is_root and not rec.get('acl_protected'):
                 raise TrustBoundaryError('NTFS task root inherits permissions: ' + str(paths[index]))
             if rec.get('owner') != rec.get('me'):
                 raise TrustBoundaryError('NTFS task state not owned by current identity')
@@ -129,7 +138,7 @@ def validate_private_task_home(home: Path, *, require_database: bool) -> None:
         if not path.exists() or path.is_symlink():
             raise TrustBoundaryError('private task state path missing or linked')
     if os.name == 'nt':
-        _windows_validate(paths)
+        _windows_validate(paths, protected_root=home)
     elif os.name == 'posix':
         _posix_validate(paths)
     else:

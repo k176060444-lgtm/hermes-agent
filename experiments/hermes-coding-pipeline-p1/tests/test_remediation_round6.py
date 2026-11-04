@@ -44,7 +44,7 @@ def test_r6_001_protected_home_allows_safe_inherited_sqlite_children(monkeypatch
     shm = home / 'state.sqlite-shm'
     records = _acl_records(home, [db, wal, shm])
     _stub_windows_query(monkeypatch, records)
-    _windows_validate([home, db, wal, shm])
+    _windows_validate([home, db, wal, shm], protected_root=home)
 
 
 def test_r6_001_unprotected_home_still_blocks(monkeypatch, tmp_path):
@@ -52,7 +52,7 @@ def test_r6_001_unprotected_home_still_blocks(monkeypatch, tmp_path):
     db = home / 'state.sqlite'
     _stub_windows_query(monkeypatch, _acl_records(home, [db], root_protected=False))
     with pytest.raises(TrustBoundaryError, match='task root inherits'):
-        _windows_validate([home, db])
+        _windows_validate([home, db], protected_root=home)
 
 
 @pytest.mark.parametrize('kind', ['unexpected_principal', 'wrong_owner', 'misordered_response'])
@@ -67,7 +67,7 @@ def test_r6_001_inherited_children_still_require_safe_effective_acl(monkeypatch,
         records[1], records[2] = records[2], records[1]
     _stub_windows_query(monkeypatch, records)
     with pytest.raises((TrustBoundaryError, ValueError)):
-        _windows_validate([home, db, wal])
+        _windows_validate([home, db, wal], protected_root=home)
 
 
 def _run_powershell(script: str) -> None:
@@ -134,3 +134,39 @@ Set-Acl -LiteralPath $path -AclObject $acl
 '''.replace('__WAL__', wal_path))
         with pytest.raises(TrustBoundaryError, match='other principals'):
             validate_private_task_home(home, require_database=True)
+
+
+def test_r7_001_protected_root_is_identified_by_path_not_position(monkeypatch, tmp_path):
+    home = tmp_path / 'private'
+    db = home / 'state.sqlite'
+    # Deliberately put the database before the root. The protected-root rule
+    # must still apply to the root path, not whichever record happens to be 0.
+    records = _acl_records(db, [home])
+    records[1]['acl_protected'] = False
+    _stub_windows_query(monkeypatch, records)
+    with pytest.raises(TrustBoundaryError, match='task root inherits'):
+        _windows_validate([db, home], protected_root=home)
+
+
+def test_r7_001_protected_root_can_be_non_first_when_acl_is_safe(monkeypatch, tmp_path):
+    home = tmp_path / 'private'
+    db = home / 'state.sqlite'
+    records = _acl_records(db, [home])
+    records[1]['acl_protected'] = True
+    _stub_windows_query(monkeypatch, records)
+    _windows_validate([db, home], protected_root=home)
+
+
+@pytest.mark.parametrize('requested_paths', ['missing', 'duplicate'])
+def test_r7_001_protected_root_must_be_present_exactly_once(monkeypatch, tmp_path, requested_paths):
+    home = tmp_path / 'private'
+    db = home / 'state.sqlite'
+    if requested_paths == 'missing':
+        paths = [db]
+        records = _acl_records(db, [])
+    else:
+        paths = [home, db, home]
+        records = _acl_records(home, [db, home])
+    _stub_windows_query(monkeypatch, records)
+    with pytest.raises(TrustBoundaryError, match='protected root must appear exactly once'):
+        _windows_validate(paths, protected_root=home)
