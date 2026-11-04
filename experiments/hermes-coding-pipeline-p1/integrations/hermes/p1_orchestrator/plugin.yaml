@@ -1,0 +1,18 @@
+name: p1_orchestrator
+description: >-
+  DRAFT Hermes orchestrator tools for the P1 coding pipeline (init/run/status/
+  reconcile/approve-spec/audit/export). NOT INSTALLED: Stage-2B-1 ships this
+  only as source under experiments/hermes-coding-pipeline-p1/integrations so
+  it can be independently audited. Copying it into any live Hermes profile or
+  registering gateway tools requires explicit user approval (Stage-2B-2).
+version: 0.0.1-draft
+config:
+  p1_repo_dir:
+    description: >-
+      Absolute path to the audited experiments/hermes-coding-pipeline-p1 tree.
+      The plugin refuses every call when unset or non-absolute; there is no
+      implicit fallback.
+  python_executable:
+    description: >-
+      Absolute interpreter path used to run `python -m p1 ...`. Defaults to the
+      gateway's own interpreter when it is absolute.

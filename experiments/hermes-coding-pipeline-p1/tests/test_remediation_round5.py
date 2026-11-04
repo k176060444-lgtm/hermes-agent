@@ -24,8 +24,9 @@ def test_r5_001_wal_shm_and_evidence_children_are_explicitly_inspected(tmp_path,
     for sub in ("logs", "snapshots", "artifacts", "audit_evidence"):
         (home / sub).mkdir()
     checked = []
-    monkeypatch.setattr(trust, "_windows_validate" if os.name == "nt" else "_posix_validate",
-                        lambda paths: checked.extend(path.name for path in paths))
+    monkeypatch.setattr(
+        trust, "_windows_validate" if os.name == "nt" else "_posix_validate",
+        lambda paths, **kwargs: checked.extend(path.name for path in paths))
     validate_private_task_home(home, require_database=True)
     assert {"task", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm",
             "logs", "snapshots", "artifacts", "audit_evidence"}.issubset(set(checked))

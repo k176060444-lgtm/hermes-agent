@@ -1,6 +1,6 @@
 # Hermes Coding Pipeline P1 — candidate implementation
 
-**Status: Round-006 audit remediation candidate for independent Round-007 audit; offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
+**Status: Stage-2B-1 trusted-runner adaptation layer (offline development branch; Round-007 candidate preserved). Strict real integration remains hard-blocked at executor gate; not approved for 21bao live use, live model calls or deployment.**
 
 P1 receives two outputs from Hermes Gate 0.1: (1) approved user intent and goals, and (2) approved 12-role Harness/model/node matrix. It programmatically controls Phase 0.2 through Gate 5.9. Hermes remains the human-facing Orchestrator; P1 is its deterministic execution kernel. P2 intent/matrix conversation automation and Phase 6/7 deployment/cleanup are explicitly excluded.
 
@@ -120,3 +120,13 @@ principals and wrong ownership. See `docs/ROUND_006_REMEDIATION.md` and
 `prompts/ROUND007_AUDIT_PROMPT.md`. A real Windows lifecycle audit is required.
 R6-002 file-level DACL deep enumeration remains an informational P3 finding.
 R5-005 and R2-006 remain `MITIGATED_FAIL_CLOSED`; the real mode is disabled.
+
+### Stage-2B-1 development slice (offline only, not a release)
+
+`feature/p1-stage2b-20261104` adds the Runner protocol + offline client
+(`p1/runner.py`), Job Object wrapper (`p1/winjobs.py`, real Windows
+descendant-tree kill verified locally), Codex/OpenCode adapter layers with
+version freeze + capability probes (`p1/harness/`), the uninstalled Hermes
+plugin draft (`integrations/hermes/p1_orchestrator/`) and 48 offline tests.
+No account, service, ACL, gateway or paid call was touched; see
+`docs/STAGE2B_1_IMPLEMENTATION.md` and `docs/STAGE2B_2_PROVISIONING_PLAN.md`.
