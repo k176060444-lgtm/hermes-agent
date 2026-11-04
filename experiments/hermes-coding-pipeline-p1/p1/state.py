@@ -96,27 +96,48 @@ class Store:
                     errors.append("task row does not match the last journal state hash")
             except (KeyError, ValueError, TypeError, IndexError) as exc:
                 errors.append(f"task state journal integrity error: {exc}")
-        # Bind run metadata to the journal, not just the mutable runs table.
-        # Incomplete dispatched runs are deliberately left for reconciliation.
+        # Two-way binding: every event must still have its run row, and every
+        # run row must have its exact recorded dispatch metadata. Rebuilding
+        # mutable runs rows or deleting them cannot silently pass verification.
         dispatched={}
         finished={}
         for event in rows:
+            if event["kind"] not in ("execution_dispatched", "execution_finished"):
+                continue
             try:
                 data=json.loads(event["payload"])
+                run_id=data["run_id"]
+                if not isinstance(run_id, int) or isinstance(run_id, bool) or run_id <= 0:
+                    raise ValueError("invalid run_id")
                 if event["kind"]=="execution_dispatched":
-                    dispatched[int(data["run_id"])]=data
-                elif event["kind"]=="execution_finished":
-                    finished[int(data["run_id"])]=data
+                    if run_id in dispatched:
+                        errors.append(f"run {run_id}: duplicate dispatch event")
+                    dispatched[run_id]=data
+                else:
+                    if run_id in finished:
+                        errors.append(f"run {run_id}: duplicate finish event")
+                    finished[run_id]=data
             except (ValueError,TypeError,KeyError) as exc:
                 errors.append(f"run event malformed {event['id']}: {exc}")
         runs=self.db.execute("SELECT * FROM runs WHERE task_id=?", (task_id,)).fetchall()
-        for run in runs:
-            run_id=run["id"]
+        indexed={run["id"]:run for run in runs}
+        for run_id in dispatched:
+            if run_id not in indexed:
+                errors.append(f"run {run_id}: dispatch journal has no run row")
+        for run_id in finished:
+            if run_id not in indexed:
+                errors.append(f"run {run_id}: finish journal has no run row")
+            if run_id not in dispatched:
+                errors.append(f"run {run_id}: finish journal has no dispatch event")
+        for run_id,run in indexed.items():
             if run_id not in dispatched:
                 errors.append(f"run {run_id}: dispatch event missing")
                 continue
-            if dispatched[run_id].get("input_sha")!=run["input_sha"]:
-                errors.append(f"run {run_id}: input SHA differs from dispatch journal")
+            origin=dispatched[run_id]
+            if (origin.get("input_sha") != run["input_sha"] or
+                origin.get("stage") != run["stage"] or
+                origin.get("role") != run["role"]):
+                errors.append(f"run {run_id}: stage/role/input differs from dispatch journal")
             if run["status"]=="COMPLETED":
                 record=finished.get(run_id)
                 if not record:
@@ -127,8 +148,11 @@ class Store:
                         record.get("output_sha")!=run["output_sha"] or
                         record.get("status")!=run["status"]):
                         errors.append(f"run {run_id}: run details or output differs from journal")
-            elif run_id in finished:
-                errors.append(f"run {run_id}: terminal journal for unfinished run")
+            elif run["status"]=="RUNNING":
+                if run_id in finished:
+                    errors.append(f"run {run_id}: terminal journal for unfinished run")
+            else:
+                errors.append(f"run {run_id}: unsupported status {run['status']}")
         return errors
 
     def start_run(self, task_id: str, stage: str, role: str, input_sha: str, details: dict) -> int:

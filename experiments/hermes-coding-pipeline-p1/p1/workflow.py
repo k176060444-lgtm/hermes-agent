@@ -122,8 +122,22 @@ class Pipeline:
     def close(self):self.store.close()
 
     def status(self)->dict:
+        """Read-only effective status, never re-sealing suspicious task state.
+
+        The persisted state is preserved for forensics.  Callers see a
+        BLOCKED effective status whenever current journal/approval evidence
+        disagrees, even if the last saved status was WAITING_EXTERNAL.
+        """
         task=self.store.load(self.task_id)
-        return {key:task.get(key) for key in ("task_id","mode","stage","status","round_a","round_b","compliance_retraces","commit_sha","spec_sha256","a2a_job_id","last_error")}
+        result={key:task.get(key) for key in ("task_id","mode","stage","status","round_a","round_b","compliance_retraces","commit_sha","spec_sha256","a2a_job_id","last_error")}
+        issues=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+        if issues:
+            result["persisted_status"]=result["status"]
+            result["status"]="BLOCKED"
+            result["integrity_preflight"]="FAILED"
+            result["integrity_errors"]=issues
+            result["last_error"]="read-only preflight integrity failure: "+"; ".join(issues)
+        return result
 
     def _save(self,task:dict,event:str,detail:dict|None=None):
         self.store.save(task,event,detail)

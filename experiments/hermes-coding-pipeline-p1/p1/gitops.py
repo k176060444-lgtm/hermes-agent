@@ -104,9 +104,16 @@ def test_commit_transition(repo: Path, previous: str, current: str) -> tuple[boo
         return False, []
     delta=git(repo,"diff","--name-status","--no-renames",previous,current).splitlines()
     changes=[entry.split("\t",1) for entry in delta]
-    # Tester may add new test files, but must not rewrite, delete or rename
-    # baseline or protected test cases, even if the output remains green.
-    return all(len(item)==2 and item[0]=="A" and test_path(item[1]) for item in changes), delta
+    # Tester may add only regular test case modules. No collection-control
+    # files, symlinks, gitlinks, rewrites, deletes or renames.
+    allowed=all(len(item)==2 and item[0]=="A" and test_path(item[1]) for item in changes)
+    if allowed:
+        for _status, name in changes:
+            entry=git(repo,"ls-tree",current,"--",name).split(None,3)
+            if len(entry)<4 or entry[0] not in ("100644","100755") or entry[1]!= "blob":
+                allowed=False
+                break
+    return allowed, delta
 
 
 def inventory(root: Path) -> dict[str,str]:
@@ -142,8 +149,30 @@ def changed(before: dict[str,str], after: dict[str,str]) -> set[str]:
 
 
 def test_path(path: str) -> bool:
-    p=Path(path)
-    return bool("tests" in p.parts or p.name.startswith("test_") or p.name.endswith("_test.py") or p.name.endswith(".test.ts") or p.name.endswith(".spec.ts"))
+    """Only isolated test *case files*, never collection/import configuration.
+
+    A filename under ``tests/`` is not automatically safe: pytest's
+    ``conftest.py`` can change collection for the entire suite.  Likewise,
+    pytest.ini, __init__.py and helper modules can redirect imports.  Explicit
+    test-module naming is required for all newly created Tester files.
+    """
+    from pathlib import PurePosixPath
+    if not isinstance(path, str) or not path or "\\" in path:
+        return False
+    p=PurePosixPath(path)
+    if p.is_absolute() or any(part in ("", ".", "..") for part in p.parts):
+        return False
+    name=p.name
+    if name.startswith(".") or any(part.startswith(".") for part in p.parts):
+        return False
+    return bool(
+        (name.startswith("test_") and name.endswith(".py") and len(name)>8)
+        or (name.endswith("_test.py") and len(name)>8)
+        or any(name.endswith(suffix) and len(name)>len(suffix)
+               for suffix in (".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx",
+                              ".test.js", ".spec.js", ".test.jsx", ".spec.jsx",
+                              ".test.mjs", ".spec.mjs", "_test.go"))
+    )
 
 
 def create_worktree(project_root: Path, target: Path, task_id: str, base_ref: str, offline: bool) -> dict:

@@ -1,6 +1,6 @@
 # Hermes Coding Pipeline P1 — candidate implementation
 
-**Status: Round-001 FAIL remediation candidate, offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
+**Status: Round-003 FAIL remediation candidate for independent Round-004 audit; offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
 
 P1 receives two outputs from Hermes Gate 0.1: (1) approved user intent and goals, and (2) approved 12-role Harness/model/node matrix. It programmatically controls Phase 0.2 through Gate 5.9. Hermes remains the human-facing Orchestrator; P1 is its deterministic execution kernel. P2 intent/matrix conversation automation and Phase 6/7 deployment/cleanup are explicitly excluded.
 
