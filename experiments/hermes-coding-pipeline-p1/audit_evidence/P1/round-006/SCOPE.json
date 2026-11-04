@@ -1,0 +1,71 @@
+{
+  "schema_version": 6,
+  "audit_round": "round-006",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "auditor_role": "independent code-audit agent (no remediation, no subagents spawned this round)",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "a69d04084c72dae437fc79f1fb9eaed8152d1644",
+  "audited_commit_parent": "9eb543de791a98f7bad4b5ebf1fd1b2aa6836df9",
+  "audited_tree_sha": "c784034eca01ed299a3178649d2b8b8f27f662be",
+  "previous_audit_report_commit": "9eb543de791a98f7bad4b5ebf1fd1b2aa6836df9",
+  "audited_directory": "experiments/hermes-coding-pipeline-p1/",
+  "files_in_scope": 74,
+  "source_integrity": {
+    "method": "Git blob SHA-1 recomputed from snapshot against manifest, before and after all test executions",
+    "checked": 74,
+    "mismatches": 0
+  },
+  "environment": {
+    "host": "21bao (Windows 10, kk-pc-server)",
+    "python": "3.11.15",
+    "git": "2.54.0.windows.1",
+    "powershell": "5.1 (Windows PowerShell, query-only ACL inspections plus Set-Acl only on auditor-created disposable scratch dirs)",
+    "workspace": "C:/Users/KK/AppData/Local/hermes/profiles/ling/cache/scratch/p1-round006-audit-20261104",
+    "mode": "offline: pytest fixtures, local stub subprocesses, disposable NTFS scratch; full audit trail under testlogs/"
+  },
+  "tests": {
+    "project_suite": {"collected": 108, "executed": 108, "passed": 104, "failed": 0, "errors": 0, "skipped": 4,
+      "skips": ["test_r4_002_posix_tab_filename (skipif nt - correct per R5-003 fix)",
+                 "test_r4_001_private_boundary_checks_owner_and_mode (POSIX-only)",
+                 "test_r4_001_untrusted_integration_state_is_blocked_without_dispatch (POSIX-only)",
+                 "test_r4_001_private_integrated_state_allows_preflight_but_not_unverified_harness (POSIX-only)"],
+      "windows_acl_test_r5_004": "EXECUTED and PASSED (not skipped) in batch13"},
+    "independent_probes": {"cases": 51, "batches": 7, "all_exit_zero": true, "failures": 0},
+    "ntfs_lifecycle_forensics": {"scripts": ["wal_lifecycle2.py", "wal_churn.py"], "cleanup": "disposable dirs removed after use"},
+    "fixture_corrections_disclosed": "two auditor-side expectations targeted the pre-Round-006 contract and were corrected; product code never modified; corrected batches re-run green"
+  },
+  "findings_status": {
+    "R5-001": "FIXED",
+    "R5-002": "FIXED (offline-verifiable scope; real-invocation end-to-end NOT_VERIFIED until Stage-2)",
+    "R5-003": "FIXED",
+    "R5-004": "FIXED",
+    "R5-005": "MITIGATED_FAIL_CLOSED (no real separate-identity runner exists; per audit discipline NOT labeled FIXED)",
+    "R2-006": "MITIGATED_FAIL_CLOSED (carried)",
+    "R4-001": "MITIGATED_FAIL_CLOSED (carried; now additionally gated by R6-001 for real provisioning)",
+    "new": {"R6-001": "P2", "R6-002": "P3"},
+    "regressions": 0
+  },
+  "explicitly_not_done": [
+    "no real Codex/OpenCode harness invocation, no paid model calls",
+    "no connection to 5bao, 9bao, rustyhand or any remote A2A node",
+    "no modification of Hermes live config, Souls, audited source, product tests, or prior audit reports",
+    "no deployment or production run of P1 on 21bao",
+    "ACL mutation limited to auditor-created disposable scratch directories, deleted afterwards"
+  ],
+  "not_verified": [
+    "separate-identity runner service, token-SID attestation, and proof the Agent cannot access the ledger (R5-005)",
+    "21bao production NTFS provisioning and dedicated service account",
+    "trust-surface satisfiability under the real SQLite WAL lifecycle (currently UNSATISFIABLE as written - R6-001)",
+    "Windows descendant-process-tree termination beyond direct child kill",
+    "real harness/provider/model provenance and test-execution receipts",
+    "human identity binding of Gate 0.1/0.2/5.9 approvals",
+    "P0 protocol and physical identity attestation; remote three-node A2A",
+    "Windows E: production worktree and kill guard"
+  ],
+  "real_integration_allowed": false,
+  "release_statement": "Round-006 CONDITIONAL covers offline semantics only. P1 must NOT run real coding tasks on 21bao: integration is fail-closed by the legacy flag AND by the unconditional executor.py:129 separate-identity gate; R5-005/R2-006/R6-001 remain open before Stage-2 enablement.",
+  "report_files": ["AUDIT_REPORT.md", "FINDINGS.json", "TEST_RESULTS.txt", "SCOPE.json"],
+  "generated_at": "2026-11-04T20:31:32+08:00"
+}

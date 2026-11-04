@@ -1,0 +1,165 @@
+{
+  "schema_version": 6,
+  "audit_round": "round-006",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "a69d04084c72dae437fc79f1fb9eaed8152d1644",
+  "audited_commit_parent": "9eb543de791a98f7bad4b5ebf1fd1b2aa6836df9",
+  "audited_tree_sha": "c784034eca01ed299a3178649d2b8b8f27f662be",
+  "previous_audit_report_commit": "9eb543de791a98f7bad4b5ebf1fd1b2aa6836df9",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "environment": "21bao Windows 10, offline; Python 3.11.15, git 2.54.0, PowerShell 5.1; no paid model, no 5bao/9bao/rustyhand, no live Hermes/A2A config change",
+  "summary": {
+    "project_tests_on_windows": {"collected": 108, "passed": 104, "failed": 0, "skipped": 4, "errors": 0,
+      "skipped_are_legitimate_posix_only": true},
+    "developer_claim": "107 passed 1 skipped on Linux; Windows ACL test never executed by developer",
+    "windows_execution": "ACL test test_r5_004 executed and PASSED on 21bao (batch13); zero failures on Windows",
+    "independent_probes": {"cases": 51, "batches": 7, "all_exit_zero": true},
+    "windows_ntfs_forensics": ["wal_lifecycle2.py step1/step2/step3", "wal_churn.py", "r6a real-DACL directory/file ACE cases"],
+    "source_integrity": {"files_checked": 74, "blob_mismatches": 0, "checked_before_and_after_tests": true}
+  },
+  "round5_target_findings": [
+    {
+      "id": "R5-001",
+      "severity": "P3",
+      "claim": "信任检查面仅 home+state.sqlite，WAL/SHM 伴生与证据目录未纳入",
+      "status": "FIXED",
+      "evidence": [
+        "p1/trust.py:100-112 surface now = home, state.sqlite, existing/symlinked state.sqlite-wal and -shm, existing snapshots/logs/artifacts/audit_evidence; missing or linked mandatory path fails closed",
+        "probe r6b_trust enumeration spy on live Windows Store: inspected=['.', 'snapshots', 'state.sqlite', 'state.sqlite-shm', 'state.sqlite-wal']",
+        "probe r6a real NTFS: after private protected DACL, extra Everyone ACE on the logs evidence DIRECTORY -> REJECTED 'grants access to other principals'; positive control ACCEPTED",
+        "developer tests test_r5_001_* (enumeration + symlink) executed and PASSED on Windows batch13"
+      ],
+      "residual": "Individual files INSIDE evidence directories are not enumerated (filed as R6-002, mitigated by protected-parent inheritance + hash-bound contents)."
+    },
+    {
+      "id": "R5-002",
+      "severity": "P3",
+      "claim": "capture/timeout 元数据未绑定事件链，可无痕改写",
+      "status": "FIXED",
+      "evidence": [
+        "p1/executor.py:170-172,190 capture file hashed into envelope capture_sha256",
+        "p1/workflow.py:266-273,291 capture name+digest bound into logs and invocation details before finish_run journals the details hash",
+        "p1/workflow.py:535-552 integration runs verify capture stream three ways (disk vs logs-info vs invocation) plus inner stdout/stderr SHA references and semantic refusal of timed_out/output_limit_exceeded receipts",
+        "probe r6a: fully chain-consistent COMPLETED run with capture timed_out:true -> audit_events=[] yet verify_evidence NON_COMPLIANT 'invalid role capture receipt' and Gate 5.9 export raises 'evidence invalid'",
+        "probe r6a: synchronized stdout.bin swap with all detail hashes rewritten (no journal rewrite) -> caught: 'run 9: run details or output differs from journal', NON_COMPLIANT, export refused",
+        "probe r6a: RUNNING invocation (timeout semantics) -> status NEEDS_RECONCILIATION with persisted status preserved, verify_evidence NON_COMPLIANT, export refused - completed vs reconciliation-pending invocations correctly distinguished, unfinished never COMPLIANT",
+        "developer test test_r5_002 (tamper + erase capture) executed and PASSED on Windows batch13"
+      ],
+      "residual": "No real integration invocation exists yet (R5-005 gate), so the executor-side production binding path is NOT_VERIFIED end-to-end until Stage 2; timeout.json remains diagnostic by design."
+    },
+    {
+      "id": "R5-003",
+      "severity": "P3",
+      "claim": "回归测试在 Windows 创建 NTFS 非法制表符文件名必败",
+      "status": "FIXED",
+      "evidence": [
+        "tests/test_remediation_round4.py split: space+Unicode case 'test_空 格.py' runs on all platforms (Windows PASS batch12); tab case renamed test_r4_002_posix_tab_filename with skipif(os.name=='nt')",
+        "full Windows suite: 104 passed / 0 failed / 4 legitimate skips"
+      ]
+    },
+    {
+      "id": "R5-004",
+      "severity": "P2",
+      "claim": "R4-001 trust.py Windows ACL 分支在目标平台零测试覆盖",
+      "status": "FIXED",
+      "evidence": [
+        "tests/test_remediation_round5.py:98-144 real NTFS DACL positive/negative regression, skipif(os.name!='nt') so it executes exactly on the deployment OS",
+        "executed on 21bao in batch13: PASSED (not skipped); manipulates only a disposable pytest tmp dir via Set-Acl, never live task home or system policy",
+        "auditor extended the coverage independently (r6a logs-directory ACE rejection; wal_lifecycle2.py positive ACCEPT after manual per-child protection)"
+      ]
+    },
+    {
+      "id": "R5-005",
+      "severity": "P2",
+      "claim": "OS 账户隔离信任前提未被代码强制，同身份伪造仍成立",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": [
+        "p1/executor.py:124-129 unconditional raise BEFORE adapter parsing or Popen: 'NOT_VERIFIED: no authenticated separate-identity Agent runner is installed' - legacy TRUSTED_INTEGRATION_EXECUTION_VERIFIED toggle cannot re-enable the same-identity local runner",
+        "probe r6b_gate: flag force-enabled + fully valid adapter (absolute argv, explicitly_authorized:true, plus adapter boolean isolated:true) -> still refused; zero side-effect files logs/907.*",
+        "ordinary subprocess.Popen children do inherit the orchestrator identity (code comment executor.py:123-128 and auditor analysis agree); no runas/LogonUser/token-SID attestation mechanism exists anywhere in p1/",
+        "offline Store._event append-forgery remains possible (probe r6b_gate: chain_issues=[], advances to stage 3+4) - offline is declared non-evidentiary"
+      ],
+      "assessment": "Cannot be FIXED: no actual separate-identity runner or trusted OS identity attestation is implemented; configuration booleans explicitly do not count as proof (agreeing with ROUND_005_REMEDIATION.md line 13). Whether the Agent can access the ledger depends on real 21bao account provisioning which remains NOT_VERIFIED."
+    }
+  ],
+  "carried_known_items": [
+    {
+      "id": "R2-006",
+      "severity": "P1",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "claim": "真实 A2A 线路收据与物理身份未验证",
+      "evidence": "probe r6b_reg: direct integration call_adapter -> ContractError NOT_VERIFIED; P1 does not replace three-node blind review",
+      "assessment": "unchanged; NOT_VERIFIED for real deployment"
+    },
+    {
+      "id": "R4-001",
+      "severity": "P1",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "claim": "状态库 OS 信任边界（Round-005 语境）",
+      "evidence": "entry-point enforcement re-verified this round (r6b_trust: BLOCKED everywhere, dispatched=0, events 1->1, persisted not re-sealed); real 21bao provisioning still NOT_VERIFIED and now additionally blocked by R6-001 lifecycle issue",
+      "assessment": "carried; subsumed concerns are R5-005 + R6-001"
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "R6-001",
+      "severity": "P2",
+      "category": "operability_lifecycle_gap",
+      "title": "trust.py 要求每个被检对象 AreAccessRulesProtected=True，与 SQLite WAL 生命周期不相容：自然 provisioning 及每次进程重启后的 -wal 重建都带继承 ACE，验证永久拒绝",
+      "files": ["p1/trust.py:67-68,100-112"],
+      "evidence": [
+        "wal_lifecycle2.py on real NTFS: home protected owner-only with propagating ACE; sqlite3 (journal_mode=WAL) creates state.sqlite/-wal/-shm carrying KK:(I)(F) ONLY (no foreign principals, icacls recorded); validate_private_task_home -> REJECTED 'NTFS ACL inherits permissions: ...state.sqlite'",
+        "step2 manual per-child SetAccessRuleProtection -> ACCEPTED",
+        "wal_churn.py: clean close deletes -wal; reopen recreates it with inherited ACEs -> POST-RESTART VALIDATE REJECTED 'NTFS ACL inherits permissions: ...state.sqlite-wal'",
+        "meaning: even a correctly provisioned dedicated-account deployment would self-block integration mode at the first status/run/resume call after any restart, because the check cannot be satisfied for transient SQLite children unless an operator re-protects each recreated file"
+      ],
+      "impact": "Fail-closed direction (safe, no bypass demonstrated), but the enforcement as written is unsatisfiable under the real Windows ledger lifecycle and the docs provide no executable provisioning procedure. Becomes a hard Stage-2 blocker the moment real execution is enabled; today masked by the executor gate.",
+      "reproduction": "python -B wal_lifecycle2.py ; python -B wal_churn.py (disposable scratch dirs, auditor-owned)",
+      "minimal_fix": "Require inheritance protection only on the home top level; for child ledger objects verify effective Allow principals are a subset of {me, S-1-5-18, S-1-5-32-544} regardless of the inherited flag, and treat WAL/SHM recreation as expected lifecycle; or ship an idempotent provisioning tool that re-protects children and document it as a mandatory deployment step."
+    },
+    {
+      "id": "R6-002",
+      "severity": "P3",
+      "category": "scope_observation",
+      "title": "证据目录内部单个文件的独立 DACL 未被逐个枚举",
+      "files": ["p1/trust.py:108-112"],
+      "evidence": "probe r6a: Everyone ReadAndExecute ACE added to logs/1.stdout.bin inside an otherwise protected tree -> validate ACCEPTED (only the logs directory object itself is enumerated)",
+      "impact": "Low: reaching the file at all already requires traversal of the protected private directory (owner/SYSTEM/Administrators only), changing its DACL requires WRITE_DAC/ownership (TCB), and file CONTENT is hash-bound via run details/events (R5-002). Informational depth note.",
+      "reproduction": "probe-copy/tests/test_round6_independent.py::test_documented_round6_file_inside_evidence_dir_not_enumerated",
+      "minimal_fix": "Optional depth: verify each existing child of logs/... either carries no explicit ACEs beyond the home-propagated set or matches the recorded inventory hashes."
+    }
+  ],
+  "regression_checks": [
+    {"item": "five trust entry points in integration mode (status/run/resume/approve_spec/verify_evidence) + export", "verdict": "PASS", "evidence": "r6b_trust: BLOCKED/FAILED preflight, dispatched=0, events 1->1 unchanged, persisted READY preserved"},
+    {"item": "ACL inspection script is query-only", "verdict": "PASS", "evidence": "r6b_trust spy: Get-Acl/GetAccessRules present; no Set-Acl/icacls/grant verbs; powershell.exe -EncodedCommand"},
+    {"item": "Phase 3/4 parallel reviewers same commit", "verdict": "PASS", "evidence": "r6b_reg barrier: seen=[quality_reviewer, spec_reviewer] concurrently, one reviewed_commit sha, both audits recorded"},
+    {"item": "Gate 0.2 approval binding", "verdict": "PASS", "evidence": "r6b_reg row-tamper -> BLOCKED with planner-only runs"},
+    {"item": "Gate A/B tester exam protection incl conftest", "verdict": "PASS", "evidence": "r6b_paths unicode exam rewrite blocked; r6b_reg conftest end-to-end blocked; 8 negative path classes rejected"},
+    {"item": "5/5/2 budgets", "verdict": "PASS", "evidence": "r6b_reg round_a 2->5 persisted across separate CLI process, FAILED, exit 10; fake no-op rejected"},
+    {"item": "Pro-Audit scope", "verdict": "PASS", "evidence": "r6b_reg: low-quality APPROVE report COMPLIANT (no technical adjudication), wrong reviewed_commit NON_COMPLIANT"},
+    {"item": "A2A external-only", "verdict": "PASS", "evidence": "r6b_reg direct call_adapter NOT_VERIFIED refusal"},
+    {"item": "Simulation vs real separation", "verdict": "PASS", "evidence": "executor gate + TRUSTED flag false; final export SIMULATION ONLY; tampered report refused (r6b_reg)"},
+    {"item": "run row deletion/mutation/duplicate finish detection", "verdict": "PASS", "evidence": "r6b_reg 'dispatch journal has no run row'; r6a 'run details or output differs from journal'"},
+    {"item": "bounded stream capture helper", "verdict": "PASS", "evidence": "r6b_caps 7 cases: independent per-stream caps, dual-pipe no deadlock, invalid limits refused, timeout bounded partial"},
+    {"item": "source integrity after all runs", "verdict": "PASS", "evidence": "74/74 manifest blobs recomputed post-tests, 0 mismatches"}
+  ],
+  "fixture_disclosures": [
+    "auditor-side probe expectations were corrected twice on this round's stronger spec (invoke-level overflow/timeout cases now assert the separate-identity gate instead; surface assertion made dynamic for directories not yet created) - product code was never modified; corrected batches re-run to green"
+  ],
+  "not_verified": [
+    "actual separate-identity runner service and trusted OS token-SID attestation (R5-005)",
+    "21bao production NTFS ACL provisioning, dedicated service account and Agent process isolation",
+    "satisfiability of the trust surface under SQLite WAL lifecycle (see R6-001 - currently UNSATISFIABLE as written)",
+    "end-to-end executor->workflow capture binding via a real invocation (impossible until the gate is replaced)",
+    "Windows descendant-process-tree (Job Object) termination beyond direct child kill",
+    "real harness/provider/model provenance and test-execution receipts",
+    "human identity binding of Gate 0.1/0.2/5.9 approvals",
+    "P0 protocol and physical identity attestation; remote three-node A2A",
+    "Windows E: production worktree and kill guard"
+  ],
+  "release_statement": "P1 must NOT run in real mode on 21bao. Integration is doubly fail-closed (legacy flag + executor.py:129 unconditional gate). R5-005 remains MITIGATED_FAIL_CLOSED, R2-006 carried, and R6-001 shows the current trust surface check would even block a correctly provisioned deployment until the WAL-lifecycle semantics are fixed.",
+  "report_files": ["AUDIT_REPORT.md", "FINDINGS.json", "TEST_RESULTS.txt", "SCOPE.json"],
+  "generated_at": "2026-11-04T20:31:32+08:00"
+}

@@ -1,0 +1,78 @@
+Hermes Coding Pipeline P1 - Round-006 independent audit test log
+Audited commit: a69d04084c72dae437fc79f1fb9eaed8152d1644 (tree c784034eca01ed299a3178649d2b8b8f27f662be)
+Host: 21bao Windows 10, Python 3.11.15, git 2.54.0, PowerShell 5.1; offline fixtures + local stubs + disposable NTFS scratch only
+Generated: 2026-11-04T20:31:32+08:00
+
+== 0. Source integrity ==
+files=74 mismatches=0 (recomputed after ALL runs; identical result pre-tests)
+
+== 1. Project suite verbatim on the audited snapshot (14 batches) ==
+cmd: python -B run_tests.py collect | batch0..batch13
+env: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
+batch0  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 24.55s
+batch1  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.86s
+batch2  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 17.92s
+batch3  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 20.23s
+batch4  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 9.18s
+batch5  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.24s
+batch6  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 15.65s
+batch7  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 8.75s
+batch8  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.46s
+batch9  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.08s
+batch10 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 8.06s
+batch11 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 23.68s
+batch12 exit=0 tests=8 failures=0 errors=0 skipped=4  4 passed, 4 skipped in 4.10s
+batch13 exit=0 tests=4 failures=0 errors=0 skipped=0  4 passed in 5.35s
+TOTAL collected=108 passed=104 failed=0 errors=0 skipped=4
+Skips (all legitimate, platform-scoped):
+  SKIP test_r4_002_posix_tab_filename  (Windows filenames cannot contain tabs)
+  SKIP test_r4_001_private_boundary_checks_owner_and_mode  (POSIX mode check runs only on POSIX)
+  SKIP test_r4_001_untrusted_integration_state_is_blocked_without_dispatch  (POSIX mode check runs only on POSIX)
+  SKIP test_r4_001_private_integrated_state_allows_preflight_but_not_unverified_harness  (POSIX mode check runs only on POSIX)
+Developer claim '107 passed/1 skipped' was Linux-scoped; on 21bao: 104/0/4 with test_r5_004 ACL test EXECUTED and PASSED (batch13).
+
+== 2. Independent probes (isolated probe-copy) ==
+r6a        exit=0 tests=5 failures=0 errors=0 skipped=0 duration=13.797s
+           [round-006 specifics: forged timed_out capture receipt, synchronized stdout swap vs journal, RUNNING-vs-COMPLETED, real-DACL logs-dir ACE rejection, in-directory file ACE scope note]
+r6b_trust  exit=0 tests=5 failures=0 errors=0 skipped=0 duration=4.625s
+           [trust entry points + live ACL spy + missing paths + offline exemption + R5-001 surface enumeration]
+r6b_paths  exit=0 tests=19 failures=0 errors=0 skipped=0 duration=9.188s
+           [unicode/space/#/()/quote path battery + negative classes + unicode exam e2e + tab behaviour]
+r6b_orphan exit=0 tests=3 failures=0 errors=0 skipped=0 duration=5.391s
+           [unfinished-run reconciliation orphan/resolved/healthy]
+r6b_caps   exit=0 tests=7 failures=0 errors=0 skipped=0 duration=3.125s
+           [per-stream caps, dual-pipe no-deadlock, invalid limits, timeout bounded partial]
+r6b_gate   exit=0 tests=3 failures=0 errors=0 skipped=0 duration=5.532s
+           [separate-identity gate vs legacy flag+flood adapter; capture binding presence; offline append-forgery boundary]
+r6b_reg    exit=0 tests=9 failures=0 errors=0 skipped=0 duration=24.39s
+           [parallel reviewers, conftest, run-row delete/mutate, gate02 tamper, pro-audit scope, a2a, budgets, no-op, export tamper]
+PROBE TOTAL cases=51 failures=0 errors=0 skipped=0; every batch exit 0
+Key evidence lines:
+  [r6a] forged-timeout chain_issues=[] verdict=NON_COMPLIANT errors=['invalid role capture receipt: 9']
+  [r6a] .synced-swap chain_issues=['run 9: run details or output differs from journal'] verdict=NON_COMPLIANT
+  [r6a] .running-invocation status=NEEDS_RECONCILIATION evidence=NON_COMPLIANT ids=[9]
+  [r6a] .logs-directory extra ACE -> rejected (evidence dirs enumerated)
+  [r6a] .in-directory file ACE tampered (Everyone) -> validate ACCEPTED (scope observation); C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round006-audit-20261104\probe-r6a\test_documented_round6
+  [r6b_trust] os=nt status=BLOCKED preflight=FAILED run=BLOCKED evidence=NON_COMPLIANT dispatched=0 events=1->1 persisted=READY msg=NOT_VERIFIED: task state OS trust boundary invalid: NTFS ACL inherits permissions: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round006-audi
+  [r6b_trust] .os=nt inspected=['.', 'snapshots', 'state.sqlite', 'state.sqlite-shm', 'state.sqlite-wal'] parent_inspected=False
+  [r6b_caps] stdout overflow len=1000000 meta={'limit_per_stream_bytes': 1000000, 'stdout_bytes_observed': 1048576, 'stderr_bytes_observed': 117, 'stdout_truncated': True, 'stderr_truncated': False, 'timed_out': False, 'output_limit_exceeded': True, 'returncode': 1}
+  [r6b_caps] ....timeout: direct child killed, bounded partial stdout preserved, metadata correct
+  [r6b_gate] .legacy flag + adapter boolean isolated=true: no same-identity runner, zero side effects
+  [r6b_gate] offline-append chain_issues=[] stage=3+4 worktree=True
+  [r6b_reg] parallel seen=['quality_reviewer', 'spec_reviewer'] audits=['quality_reviewer', 'spec_reviewer'] shas={'90adb67b13cff509293a9916216a48349ef7dd1b'} status=WAITING_GATE_5_9
+  [r6b_reg] .pro-audit quality_text=COMPLIANT wrong_commit=NON_COMPLIANT errors=['spec_reviewer reviewed wrong commit']
+  [r6b_reg] .budget-A before=2 after=5 status=FAILED cli_exit=10
+
+== 3. Windows NTFS trust lifecycle forensics (R6-001) ==
+cmd: python -B wal_lifecycle2.py ; python -B wal_churn.py   (auditor-owned disposable dirs, cleaned after)
+step1 validate after natural creation -> REJECTED: NTFS ACL inherits permissions: ...state.sqlite
+  children ICACLS: state.sqlite / -wal / -shm each show ONLY 'KK-PC-SERVER\KK:(I)(F)' (no foreign principals)
+step2 validate after manual per-child protection -> ACCEPTED
+step3 validate after WAL recreation (checkpoint truncate reused file) -> ACCEPTED
+wal_churn.py: clean close deletes -wal; reopen recreates inherited copy -> POST-RESTART VALIDATE REJECTED: NTFS ACL inherits permissions: ...state.sqlite-wal
+Direction: fail-closed (no bypass). Gap: enforcement unsatisfiable for SQLite-managed transient children under normal restarts.
+
+== 4. Auditor fixture corrections (disclosed; product untouched) ==
+- two probe expectations targeted the pre-Round-006 contract (invoke-level overflow/timeout) and were corrected to
+  assert the new separate-identity gate; surface-enumeration assertion made dynamic for not-yet-created directories.
+- corrected batches re-run to green; superseded logs preserved (r6a first attempt failed 2 auditor cases, see git history of this audit only).
