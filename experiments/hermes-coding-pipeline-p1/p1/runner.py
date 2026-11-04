@@ -17,7 +17,9 @@ not authenticate the writer. Authenticity comes only from:
 * digests rehashed from orchestrator-owned storage (never trusted from the
   receipt fields alone),
 * the ledger DACL demonstrably excluding the agent principal,
-* a runner manifest whose pinned executable digest is re-measured from disk.
+* a runner manifest read from the PROTECTED task home (L3) whose pinned
+  executable digest is re-measured from disk — structure and digest
+  consistency (L1/L2) alone are explicitly NOT provenance and NOT identity.
 
 Identity is proven in-flight only. After an execution ends, the orchestrator
 may verify receipt INTEGRITY (structure, binding, capture re-hash) but must
@@ -445,8 +447,10 @@ def process_identity(pid: int) -> dict:
 
 def _assert_manifest_current(manifest: dict) -> None:
     """Re-verify the manifest shape and re-measure its pinned runner exe from
-    disk, so a stale/edited manifest dict cannot ride through."""
-    for key in ("spool_inbox", "spool_outbox", "expected_agent_sid",
+    disk, so a stale/edited manifest cannot ride through. NOTE (S2B1F-002):
+    this proves STRUCTURE + LOCAL DIGEST CONSISTENCY only - provenance is
+    established exclusively by _read_anchored_manifest() below."""
+    for key in ("task_id", "spool_inbox", "spool_outbox", "expected_agent_sid",
                 "runner_exe", "runner_exe_sha256"):
         if not manifest.get(key):
             raise RunnerAttestationError(f"runner manifest incomplete: {key}")
@@ -454,19 +458,54 @@ def _assert_manifest_current(manifest: dict) -> None:
         raise RunnerAttestationError("runner executable differs from manifest pin")
 
 
+MANIFEST_NAME = "runner_manifest.json"
+
+
+def _read_anchored_manifest(home: Path, task_id: str) -> dict:
+    """S2B1F-002 provenance anchor: the trusted manifest is read from the
+    orchestrator-protected task HOME (snapshots/runner_manifest.json, the same
+    directory P1 initialized under trust.validate_private_task_home) and is
+    task-bound. A caller-CONSTRUCTED manifest dict is never trusted: shape
+    validity and matching local digests prove self-consistency ONLY, not
+    provisioning from protected state, and never identity attestation.
+
+    The four conclusions must stay distinct:
+      L1 field structure valid          <- _assert_manifest_current
+      L2 digests mutually consistent    <- manifest_sha256 echo + capture rehash
+      L3 manifest read from protected
+         orchestrator task home         <- THIS function (plus the trust gate
+                                           that protected the home at init)
+      L4 runner/agent identity attested
+         by live OS measurement         <- verify_execution_identity, live
+         path only; verify_receipt_integrity never claims it."""
+    path = Path(home) / "snapshots" / MANIFEST_NAME
+    if not path.is_file():
+        raise RunnerUnavailableError(
+            "no anchored runner manifest in the protected task home; real "
+            "execution stays blocked")
+    manifest = read_json(path)
+    _assert_manifest_current(manifest)
+    if manifest["task_id"] != task_id:
+        raise RunnerAttestationError(
+            "anchored manifest is bound to a different task")
+    return manifest
+
+
 def manifest_sha256(manifest: dict) -> str:
     return hashlib.sha256(canonical(manifest).encode("utf-8")).hexdigest()
 
 
-def verify_execution_identity(*, receipt: dict, request: dict, manifest: dict,
-                              ledger_root: Path, orchestrator: str | None = None,
+def verify_execution_identity(*, receipt: dict, request: dict, home: Path,
+                              ledger_root: Path | None = None,
+                              orchestrator: str | None = None,
                               identity_probe=None) -> dict:
     """Re-measure the agent process LIVE and cross-check the receipt.
 
-    Enforcement chain (S2B1-001): the launch request and the receipt are
-    validated and cross-bound FIRST, the expected agent SID comes from the
-    trusted ``manifest`` argument (never from the request dict), and the
-    manifest's pinned runner executable is re-measured from disk.
+    Enforcement chain (S2B1-001 + S2B1F-002): the launch request and receipt
+    are validated and cross-bound FIRST; the manifest is read from the
+    PROTECTED task HOME (never from a caller-supplied dict) and is task-bound;
+    its pinned runner executable is re-measured from disk; the expected agent
+    SID comes only from that anchored manifest.
 
     Every identity fact is measured from the OS on a live process instance
     (S2B1-002/003): token SID, groups, image path and the process creation
@@ -477,11 +516,14 @@ def verify_execution_identity(*, receipt: dict, request: dict, manifest: dict,
     ``identity_probe`` exists ONLY for unit tests. When provided, every check
     still runs and still raises on violation, but the result is forcibly
     marked ``attested=False`` with ``test_seam=True`` - a substitute can never
-    obtain production trust.
+    obtain production trust. Note that even a live ``attested=True`` proves
+    L4 for the measured PROCESS INSTANCE only; it does not retroactively
+    attest finished executions (use verify_receipt_integrity, which by design
+    can never return attested=True).
     """
     validate_launch_request(request)
     validate_receipt(receipt, request)
-    _assert_manifest_current(manifest)
+    manifest = _read_anchored_manifest(Path(home), request["task_id"])
     pin = manifest["expected_agent_sid"]
     if receipt["agent_token_sid"] != pin:
         raise RunnerAttestationError("receipt SID does not match manifest pin")
@@ -510,11 +552,12 @@ def verify_execution_identity(*, receipt: dict, request: dict, manifest: dict,
         raise RunnerAttestationError("live executable path differs from receipt")
     if digest_file(Path(image)) != request["frozen_harness_sha256"]:
         raise RunnerAttestationError("harness digest differs from frozen snapshot")
-    verify_ledger_inaccessible(Path(ledger_root), identity["user_sid"],
+    verify_ledger_inaccessible(Path(ledger_root or home), identity["user_sid"],
                                identity["group_sids"])
     result = {"attested": not test_seam, "user_sid": identity["user_sid"],
               "groups": sorted(identity["group_sids"]), "image": image,
-              "start_time": identity["start_time"]}
+              "start_time": identity["start_time"],
+              "manifest_provenance": "anchored_task_home"}
     if test_seam:
         result["test_seam"] = True
         result["note"] = ("identity probe was a test substitute; attestation is "
@@ -522,16 +565,23 @@ def verify_execution_identity(*, receipt: dict, request: dict, manifest: dict,
     return result
 
 
-def verify_receipt_integrity(*, receipt: dict, request: dict, manifest: dict,
+def verify_receipt_integrity(*, receipt: dict, request: dict, home: Path,
                              capture_dir: Path | str | None = None) -> dict:
     """POST-EXIT receipt verification: structure, full request cross-binding,
-    manifest-pin echo and capture-digest re-hash from orchestrator-owned
-    storage. This NEVER returns an identity attestation - ``attested`` stays
-    reserved for the live path; a receipt for an exited process can only ever
-    be integrity-verified (S2B1-003 boundary)."""
+    anchored task-home manifest echo and capture-digest re-hash from
+    orchestrator-owned storage.
+
+    S2B1F-002 semantics: this function certifies L1+L2 (and, via the home
+    read, L3 provenance of the manifest) - it NEVER certifies L4.
+    ``attested``/``runner_identity_attested`` are structurally False: a
+    receipt for an exited process can only ever be integrity-verified;
+    self-consistent fabricated files outside the protected home cannot pass
+    the anchored manifest read, and passing integrity does not mean any
+    runner identity was ever verified (S2B1-003 boundary).
+    """
     validate_launch_request(request)
     validate_receipt(receipt, request)
-    _assert_manifest_current(manifest)
+    manifest = _read_anchored_manifest(Path(home), request["task_id"])
     expected_manifest = manifest_sha256(manifest)
     if receipt["runner_manifest_sha256"] != expected_manifest:
         raise RunnerAttestationError(
@@ -552,8 +602,16 @@ def verify_receipt_integrity(*, receipt: dict, request: dict, manifest: dict,
             raise RunnerAttestationError(
                 f"capture digest mismatch for {path.name}")
     return {"integrity_verified": True, "attested": False,
-            "note": ("post-exit integrity only: structure, binding, manifest echo "
-                     "and capture re-hash; NOT a live identity attestation")}
+            "runner_identity_attested": False,
+            "manifest_provenance": "anchored_task_home",
+            "levels": {"L1_structure": True, "L2_digests": True,
+                       "L3_manifest_anchored": True,
+                       "L4_identity_attested": False},
+            "note": ("post-exit integrity only: structure, binding, anchored "
+                     "manifest echo and capture re-hash; NOT a runner identity "
+                     "attestation and no path here can produce trusted "
+                     "execution evidence (S2B1-009 closure)")
+            }
 
 
 _ACL_QUERY_MULTI = r'''
@@ -665,8 +723,8 @@ class RunnerClient:
             raise RunnerUnavailableError(
                 "no trusted runner manifest provisioned; real execution stays blocked")
         data = read_json(self.manifest_path)
-        for key in ("spool_inbox", "spool_outbox", "expected_agent_sid",
-                    "runner_exe", "runner_exe_sha256"):
+        for key in ("task_id", "spool_inbox", "spool_outbox",
+                    "expected_agent_sid", "runner_exe", "runner_exe_sha256"):
             if not data.get(key):
                 raise RunnerUnavailableError(f"runner manifest incomplete: {key}")
         if digest_file(Path(data["runner_exe"])) != data["runner_exe_sha256"]:

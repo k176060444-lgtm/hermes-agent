@@ -211,45 +211,76 @@ def extract_command_evidence(events: list) -> list:
 
 
 def merge_runner_records(claimed: list, runner_records: list, *,
-                         runner_attestation: dict | None = None) -> list:
-    """Upgrade claimed evidence ONLY on exact per-invocation agreement with
-    runner-recorded observations, and ONLY when the caller supplies a live
-    ``runner_attestation`` produced by runner.verify_execution_identity
-    (attested=True, not a test seam). Without that attestation every record
-    stays trusted=False and is marked as awaiting Stage-2B-2 authentication -
-    there is no real runner yet, so simulated 'trusted' results are
-    impossible by construction (S2B1-009).
+                         task_id: str | None = None,
+                         run_id: int | None = None) -> list:
+    """DIAGNOSTIC comparison ONLY - the trust-promotion path is CLOSED (S2B1-009).
 
-    Matching is per-invocation: each runner record is consumed at most once
-    and is paired with the claimed entry of the SAME ordinal, so one receipt
-    record can never validate two different invocations of the same command.
+    No caller-supplied value (a dict, a boolean, an 'attestation', a manifest,
+    a self-hash or an agreement between CLI events and runner records) can ever
+    set ``trusted=True`` here. Every returned entry keeps ``trusted=False``
+    and ``source='cli-event-self-report'`` with an explicit
+    ``promotion_blocked`` reason. Production-grade execution-evidence
+    authentication is a SEPARATE Stage-2B-2 design + acceptance item and is
+    deliberately not implemented early.
+
+    The function still diagnoses agreement/conflict, and enforces the identity
+    boundaries the re-audit found missing:
+    * ``command_mismatch`` - same ordinal but a different command string;
+    * ``duplicate_ordinal`` - two runner records claim the same invocation
+      ordinal (silent last-wins overwrite is forbidden, both stay untrusted);
+    * ``cross_execution_binding`` - the record's task_id/run_id disagree with
+      the supplied execution context, or the record carries no binding at all
+      (``unbound_execution_context``) while a context was supplied;
+    * ``exit_code_mismatch`` - same command/instance but a different exit code
+      (this is a contradiction; it is recorded, never promoted);
+    * ``matched_unauthenticated`` - everything agrees, yet trust stays false
+      because no authenticated runner source exists in Stage-2B-1.
     """
-    attested = bool(runner_attestation and runner_attestation.get("attested") is True
-                    and not runner_attestation.get("test_seam"))
-    by_ordinal: dict[int, dict] = {}
-    if attested:
-        for record in runner_records or []:
-            if isinstance(record, dict) and isinstance(record.get("command"), str) \
-                    and isinstance(record.get("ordinal"), int):
-                by_ordinal[record["ordinal"]] = record
+    records = [r for r in (runner_records or []) if isinstance(r, dict)]
+    ordinal_count: dict = {}
+    for record in records:
+        ordinal = record.get("ordinal")
+        if isinstance(ordinal, int):
+            ordinal_count[ordinal] = ordinal_count.get(ordinal, 0) + 1
+
     merged = []
-    consumed: set[int] = set()
     for item in claimed:
         entry = dict(item)
-        entry["promotion_blocked"] = None if attested else \
-            "no authenticated runner attestation (awaiting Stage-2B-2)"
+        entry["trusted"] = False
+        entry["source"] = item.get("source", "cli-event-self-report")
+        entry["promotion_blocked"] = (
+            "trust-promotion path closed in Stage-2B-1 (S2B1-009); "
+            "authenticated runner evidence is a Stage-2B-2 design item")
         ordinal = item.get("ordinal")
-        match = by_ordinal.get(ordinal) if isinstance(ordinal, int) else None
-        if match is None and isinstance(ordinal, int) and attested:
-            entry["no_matching_runner_record"] = True
-        if match is not None and ordinal not in consumed:
-            if match.get("exit_code") == item.get("claimed_exit"):
-                entry["trusted"] = True
-                entry["source"] = "runner-observed-agreement"
-                consumed.add(ordinal)
+        matches = [r for r in records if isinstance(ordinal, int)
+                   and r.get("ordinal") == ordinal]
+        if ordinal_count.get(ordinal, 0) > 1:
+            entry["duplicate_ordinal"] = True
+        if not matches:
+            if isinstance(ordinal, int):
+                entry["no_matching_runner_record"] = True
+            merged.append(entry)
+            continue
+        record = matches[0]
+        if record.get("command") != item.get("command"):
+            entry["command_mismatch"] = True
+            merged.append(entry)
+            continue
+        if task_id is not None or run_id is not None:
+            if record.get("task_id") != task_id or record.get("run_id") != run_id:
+                entry["cross_execution_binding"] = True
+            elif record.get("exit_code") != item.get("claimed_exit"):
+                entry["exit_code_mismatch"] = True
             else:
-                entry["contradiction"] = True
-        elif match is not None:
-            entry["contradiction"] = True  # record already consumed once
+                entry["matched_unauthenticated"] = True
+            merged.append(entry)
+            continue
+        # No execution context supplied: even a byte-identical command/exit
+        # cannot be proven to belong to THIS invocation.
+        entry["unbound_execution_context"] = True
+        if record.get("exit_code") != item.get("claimed_exit"):
+            entry["exit_code_mismatch"] = True
+        else:
+            entry["matched_unauthenticated"] = True
         merged.append(entry)
     return merged

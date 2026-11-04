@@ -285,9 +285,10 @@ def test_codex_event_parse_marks_self_report_only():
     print("CLI-reported commands stay trusted=False; kinds:", kinds)
 
 
-def test_merge_requires_authenticated_runner_attestation():
-    """S2B1-009: an unauthenticated runner_records list can NEVER upgrade
-    trust; every entry is marked as awaiting Stage-2B-2 authentication."""
+def test_merge_never_upgrades_from_any_caller_supplied_data():
+    """S2B1-009 closure: the trust-promotion parameter no longer exists and
+    NO caller-supplied runner_records list can upgrade trust - not even a
+    byte-perfect agreement."""
     claimed = cx.extract_command_evidence([
         cx.normalize_event({"type": "exec_command_end",
                             "command": "pytest -q", "exit_code": 0})])
@@ -295,31 +296,35 @@ def test_merge_requires_authenticated_runner_attestation():
     merged = cx.merge_runner_records(claimed, forged)
     assert merged[0]["trusted"] is False
     assert merged[0]["promotion_blocked"]
-    # a fake 'attested' dict that carries a test seam is rejected too:
-    fake = {"attested": True, "test_seam": True}
-    merged2 = cx.merge_runner_records(claimed, forged, runner_attestation=fake)
-    assert merged2[0]["trusted"] is False
-    print("unauthenticated runner lists can never upgrade trust")
+    assert merged[0]["source"] == "cli-event-self-report"
+    assert merged[0]["unbound_execution_context"] is True
+    import inspect
+    assert "runner_attestation" not in inspect.signature(
+        cx.merge_runner_records).parameters
+    print("no attestation parameter exists; agreement stays diagnostic")
 
 
-def test_merge_pairs_per_invocation_with_attestation():
-    """With a live attestation, records pair by ordinal and a single record is
-    consumed at most once."""
+def test_merge_per_invocation_pairing_is_diagnostic_only():
+    """Ordinal pairing + command identity + execution-context binding are all
+    enforced as DIAGNOSTIC flags; nothing is ever upgraded."""
     events = [cx.normalize_event({"type": "exec_command_end",
                                   "command": "make test", "exit_code": 0}),
               cx.normalize_event({"type": "exec_command_end",
                                   "command": "make test", "exit_code": 1})]
     claimed = cx.extract_command_evidence(events)
-    records = [{"command": "make test", "ordinal": 0, "exit_code": 0},
-               {"command": "make test", "ordinal": 1, "exit_code": 1}]
-    attestation = {"attested": True}
+    records = [{"command": "make test", "ordinal": 0, "exit_code": 0,
+                "task_id": "T-2B1", "run_id": 7},
+               {"command": "make test", "ordinal": 1, "exit_code": 1,
+                "task_id": "T-2B1", "run_id": 7}]
     merged = cx.merge_runner_records(claimed, records,
-                                     runner_attestation=attestation)
-    assert merged[0]["trusted"] is True and merged[1]["trusted"] is True
-    # one record for TWO identical invocations: the second stays unupgraded
+                                     task_id="T-2B1", run_id=7)
+    assert all(m["trusted"] is False for m in merged)
+    assert merged[0]["matched_unauthenticated"] is True
+    assert merged[1]["matched_unauthenticated"] is True
+    # one record cannot serve two invocations: the unmatched twin is flagged
     merged2 = cx.merge_runner_records(claimed, records[:1],
-                                      runner_attestation=attestation)
-    assert merged2[0]["trusted"] is True
+                                      task_id="T-2B1", run_id=7)
+    assert merged2[0]["trusted"] is False
     assert merged2[1]["trusted"] is False
     assert merged2[1].get("no_matching_runner_record") is True
 
@@ -340,8 +345,8 @@ def test_opencode_event_and_export_parsing():
     assert evidence[0]["command"] == "make test" and evidence[0]["trusted"] is False
     merged = oc.merge_runner_records(evidence, [{"command": "make test",
                                                  "ordinal": 0, "exit_code": 0}],
-                                     runner_attestation={"attested": True})
-    assert merged[0]["trusted"] is True
+                                     task_id="T-2B1", run_id=3)
+    assert merged[0]["trusted"] is False  # closed path: diagnostic only
     print("opencode session export + command evidence pipeline OK")
 
 
@@ -352,9 +357,8 @@ def test_opencode_bash_event_without_command_is_unbindable():
     records = oc.extract_command_evidence(events)
     assert records[0]["command"] is None
     assert records[0]["no_command"] is True
-    merged = oc.merge_runner_records(records, [],
-                                     runner_attestation={"attested": True})
-    assert merged[0]["trusted"] is False  # nothing to bind
+    merged = oc.merge_runner_records(records, [])
+    assert merged[0]["trusted"] is False  # nothing to bind, nothing to trust
     print("command-less bash events kept visible but unbindable")
 
 

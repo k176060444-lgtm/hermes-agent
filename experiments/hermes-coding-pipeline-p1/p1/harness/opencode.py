@@ -227,6 +227,7 @@ def extract_command_evidence(events: list) -> list:
 
 
 def merge_runner_records(claimed: list, runner_records: list, *,
-                         runner_attestation: dict | None = None) -> list:
-    from .codex import merge_runner_records as _merge  # single shared implementation
-    return _merge(claimed, runner_records, runner_attestation=runner_attestation)
+                         task_id: str | None = None,
+                         run_id: int | None = None) -> list:
+    from .codex import merge_runner_records as _merge  # shared closed-path rule
+    return _merge(claimed, runner_records, task_id=task_id, run_id=run_id)

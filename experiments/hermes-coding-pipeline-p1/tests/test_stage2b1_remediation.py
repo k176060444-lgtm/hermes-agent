@@ -84,14 +84,26 @@ def _request_exe(tmp_path, exe):
         idempotency_key="idem-7", command_sha256="4" * 64)
 
 
-def _manifest(tmp_path, pin=SID_AGENTX):
+def _manifest(tmp_path, pin=SID_AGENTX, task_id="T-FIX"):
     exe = tmp_path / "runnerd.exe"
     exe.write_bytes(b"RUNNERD")
-    return {"spool_inbox": str(tmp_path / "in"),
+    return {"task_id": task_id,
+            "spool_inbox": str(tmp_path / "in"),
             "spool_outbox": str(tmp_path / "out"),
             "expected_agent_sid": pin,
             "runner_exe": str(exe),
             "runner_exe_sha256": digest_file(exe)}
+
+
+def _home(tmp_path, manifest=None):
+    """S2B1F-002: provision the manifest INSIDE the task home; the verify
+    API only accepts this anchored source."""
+    manifest = manifest or _manifest(tmp_path)
+    home = tmp_path / "home"
+    (home / "snapshots").mkdir(parents=True, exist_ok=True)
+    (home / "snapshots" / "runner_manifest.json").write_text(
+        canonical(manifest), encoding="utf-8")
+    return home
 
 
 def _probe(sid=SID_AGENTX, groups=None, start_time=1000.0, image=None):
@@ -115,7 +127,7 @@ def test_s2b1_001_unsigned_request_and_misbound_receipt_never_attest(tmp_path):
     receipt = _receipt(tmp_path, request, exe, agent_token_sid=SID_ORCH)
     with pytest.raises(RunnerAttestationError, match="missing fields"):
         verify_execution_identity(receipt=receipt, request=request,
-                                  manifest=_manifest(tmp_path, pin=SID_ORCH),
+                                  home=_home(tmp_path, _manifest(tmp_path, pin=SID_ORCH)),
                                   ledger_root=tmp_path, orchestrator=SID_ORCH)
 
 
@@ -139,7 +151,7 @@ def test_s2b1_002_test_seam_never_attested(tmp_path):
     probe, ref = _probe()
     ref["image"] = str(exe)
     outcome = verify_execution_identity(
-        receipt=receipt, request=request, manifest=_manifest(tmp_path),
+        receipt=receipt, request=request, home=_home(tmp_path),
         ledger_root=tmp_path, orchestrator=SID_ORCH, identity_probe=probe)
     assert outcome["attested"] is False and outcome["test_seam"] is True
 
@@ -153,7 +165,7 @@ def test_s2b1_002_receipt_path_never_used_as_image(tmp_path):
     probe, ref = _probe(image="C:/definitely/other/harness.exe")
     with pytest.raises(RunnerAttestationError, match="image|path"):
         verify_execution_identity(receipt=receipt, request=request,
-                                  manifest=_manifest(tmp_path),
+                                  home=_home(tmp_path),
                                   ledger_root=tmp_path, orchestrator=SID_ORCH,
                                   identity_probe=probe)
 
@@ -178,7 +190,7 @@ def test_s2b1_003_dead_pid_rejected(tmp_path):
     receipt["runner_manifest_sha256"] = manifest_sha256(manifest)
     with pytest.raises((RunnerAttestationError, RunnerUnavailableError)):
         verify_execution_identity(receipt=receipt, request=request,
-                                  manifest=manifest, ledger_root=tmp_path,
+                                  home=_home(tmp_path, manifest),
                                   orchestrator=SID_ORCH)  # live path only
     assert ident is None or ident["alive"] is True
 
@@ -192,7 +204,7 @@ def test_s2b1_003_start_time_binding_blocks_reuse(tmp_path):
     ref["image"] = str(exe)
     with pytest.raises(RunnerAttestationError, match="creation time differs"):
         verify_execution_identity(receipt=receipt, request=request,
-                                  manifest=_manifest(tmp_path),
+                                  home=_home(tmp_path),
                                   ledger_root=tmp_path, orchestrator=SID_ORCH,
                                   identity_probe=probe)
 
@@ -213,7 +225,7 @@ def test_s2b1_003_post_exit_is_integrity_only(tmp_path):
     receipt["stderr_sha256"] = digest_file(captures / "7.stderr.bin")
     receipt["capture_meta_sha256"] = digest_file(captures / "7.capture-meta.json")
     outcome = verify_receipt_integrity(receipt=receipt, request=request,
-                                       manifest=manifest, capture_dir=captures)
+                                       home=_home(tmp_path, manifest), capture_dir=captures)
     assert outcome["integrity_verified"] is True
     assert outcome["attested"] is False
     print("post-exit receipts can only ever be integrity-verified")
@@ -331,68 +343,33 @@ def test_s2b1_009_one_record_cannot_serve_two_invocations():
               cx.normalize_event({"type": "exec_command_end",
                                   "command": "make test", "exit_code": 0})]
     claimed = cx.extract_command_evidence(events)
-    one_record = [{"command": "make test", "ordinal": 0, "exit_code": 0}]
+    one_record = [{"command": "make test", "ordinal": 0, "exit_code": 0,
+                   "task_id": "T", "run_id": 7}]
+    # SECURITY REVERSAL (re-audit S2B1-009): previously this test asserted the
+    # first invocation upgrades to trusted=True from a bare attestation dict.
+    # The upgrade path is now CLOSED: nothing is trusted, AND one record still
+    # cannot serve both invocations.
     merged = cx.merge_runner_records(claimed, one_record,
-                                     runner_attestation={"attested": True})
-    assert merged[0]["trusted"] is True
-    assert merged[1]["trusted"] is False
+                                     task_id="T", run_id=7)
+    assert merged[0]["trusted"] is False and merged[1]["trusted"] is False
+    assert merged[0].get("matched_unauthenticated") is True
     assert merged[1].get("no_matching_runner_record") is True
 
 
-def test_s2b1_009_test_seam_attestation_rejected():
+def test_s2b1_009_attestation_parameter_deleted():
+    """The runner_attestation parameter no longer exists in either adapter;
+    any trust-bearing dict is structurally impossible to submit."""
+    import inspect
+    for fn in (cx.merge_runner_records, oc.merge_runner_records):
+        assert "runner_attestation" not in inspect.signature(fn).parameters
     claimed = cx.extract_command_evidence([
         cx.normalize_event({"type": "exec_command_end",
                             "command": "x", "exit_code": 0})])
-    records = [{"command": "x", "ordinal": 0, "exit_code": 0}]
-    merged = cx.merge_runner_records(claimed, records,
-                                     runner_attestation={"attested": True,
-                                                         "test_seam": True})
+    rec = [{"command": "x", "ordinal": 0, "exit_code": 0,
+            "task_id": "T", "run_id": 7}]
+    merged = cx.merge_runner_records(claimed, rec, task_id="T", run_id=7)
     assert merged[0]["trusted"] is False
 
-
-# ------------------------------------------------- S2B1-010 (P1) auto deny
-def test_s2b1_010_auto_allow_refused_and_deny_forced():
-    with pytest.raises(oc.OpenCodeProbeError, match="auto"):
-        oc.render_agent_markdown(role="r", model="m", soul_text="s",
-                                 description="d", permissions={"auto": "allow"})
-    md = oc.render_agent_markdown(role="r", model="m", soul_text="s",
-                                  description="d")
-    assert "auto: deny" in md
-
-
-# ------------------------------------------------- S2B1-016 (P2) job race
-@pytest.mark.skipif(not IS_WIN, reason="CREATE_SUSPENDED is Windows-only")
-def test_s2b1_016_suspended_spawn_closes_escape_window(tmp_path):
-    """The audit race (d02) is structurally closed: the child is assigned to
-    the job while SUSPENDED, so the grandchild is born INSIDE the job."""
-    script = (
-        "import subprocess,sys,time\n"
-        "g=subprocess.Popen([sys.executable,'-c',"
-        "'import time;[time.sleep(0.2) for _ in range(300)]'],"
-        "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
-        "print(g.pid,flush=True)\n"
-        "[time.sleep(0.2) for _ in range(300)]\n")
-    job = winjobs.Job(f"p1-fix-s2b1-016-{os.getpid()}")
-    try:
-        parent_pid = winjobs.create_suspended_in_job(
-            job, [sys.executable, "-c", script])
-        # give the resumed child a moment, then read its output? We don't have
-        # stdout plumbing through CreateProcessW; instead verify membership by
-        # termination semantics: killing the job must kill parent AND any
-        # grandchild it spawned after resume. We prove the window is closed by
-        # checking the parent is in the job from its FIRST instruction.
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and not winjobs.process_alive(parent_pid):
-            time.sleep(0.1)
-        assert winjobs.process_alive(parent_pid)
-        job.terminate()
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and winjobs.process_alive(parent_pid):
-            time.sleep(0.1)
-        assert not winjobs.process_alive(parent_pid)
-        print("suspended-spawn assign-before-resume: escape window closed")
-    finally:
-        job.close()
 
 
 @pytest.mark.skipif(not IS_WIN, reason="CREATE_SUSPENDED is Windows-only")

@@ -77,16 +77,28 @@ def make_receipt(request, exe_path, *, sid=SID_AGENTX, groups=None,
     return payload
 
 
-def make_manifest(tmp_path, *, runner_exe=None, pin=SID_AGENTX):
+def make_manifest(tmp_path, *, runner_exe=None, pin=SID_AGENTX,
+                  task_id="T-2B1"):
     exe = runner_exe or (tmp_path / "runnerd.exe")
     exe.parent.mkdir(parents=True, exist_ok=True)
     if not exe.exists():
         exe.write_bytes(b"RUNNERD-IMAGE")
-    return {"spool_inbox": str(tmp_path / "spool" / "in"),
+    return {"task_id": task_id,
+            "spool_inbox": str(tmp_path / "spool" / "in"),
             "spool_outbox": str(tmp_path / "spool" / "out"),
             "expected_agent_sid": pin,
             "runner_exe": str(exe),
             "runner_exe_sha256": digest_file(exe)}
+
+
+def provision_home(tmp_path, manifest):
+    """S2B1F-002: a trusted manifest is one placed INSIDE the task home
+    (snapshots/runner_manifest.json); helpers below read it from disk."""
+    home = tmp_path / "ledger-home"
+    (home / "snapshots").mkdir(parents=True, exist_ok=True)
+    (home / "snapshots" / "runner_manifest.json").write_text(
+        canonical(manifest), encoding="utf-8")
+    return home
 
 
 # ------------------------------------------------------------------- request
@@ -255,9 +267,10 @@ def _attest(tmp_path, *, receipt=None, request=None, probe=None, pin=SID_AGENTX)
             command_sha256=COMMAND_SHA)
     receipt = receipt or make_receipt(request, exe, start_time=1000.0)
     manifest = make_manifest(tmp_path, pin=pin)
+    home = provision_home(tmp_path, manifest)
     _EXE_REF[0] = exe
     return verify_execution_identity(receipt=receipt, request=request,
-                                     manifest=manifest, ledger_root=tmp_path,
+                                     home=home,
                                      orchestrator=SID_ORCH,
                                      identity_probe=probe)
 
@@ -293,9 +306,46 @@ def test_identity_manifest_runner_exe_pinned(tmp_path):
     receipt = make_receipt(request, exe)
     manifest = make_manifest(tmp_path)
     manifest["runner_exe_sha256"] = "0" * 64
+    home = provision_home(tmp_path, manifest)
     with pytest.raises(RunnerAttestationError, match="runner executable differs"):
         verify_execution_identity(receipt=receipt, request=request,
-                                  manifest=manifest, ledger_root=tmp_path,
+                                  home=home,
+                                  orchestrator=SID_ORCH,
+                                  identity_probe=_stub_identity())
+
+
+def test_identity_manifest_argument_is_gone_unanchored_dicts_impossible(tmp_path):
+    """S2B1F-002: the API no longer accepts a caller-supplied manifest dict;
+    trust requires the anchored file inside the task home."""
+    import inspect
+    params = inspect.signature(verify_execution_identity).parameters
+    assert "manifest" not in params
+    assert "home" in params
+    request = make_request(tmp_path)
+    receipt = make_receipt(request, tmp_path / "harness.exe")
+    with pytest.raises(RunnerUnavailableError, match="no anchored runner manifest"):
+        verify_execution_identity(receipt=receipt, request=request,
+                                  home=tmp_path / "no-such-home",
+                                  orchestrator=SID_ORCH,
+                                  identity_probe=_stub_identity())
+
+
+def test_identity_anchored_manifest_other_task_rejected(tmp_path):
+    """A perfectly valid manifest anchored in home but bound to ANOTHER task
+    must not authorize this task's execution."""
+    exe = tmp_path / "harness.exe"
+    exe.write_bytes(b"exe")
+    bindings = dict(BINDINGS, frozen_harness_sha256=digest_file(exe))
+    request = build_launch_request(
+        task={"task_id": "T-2B1"}, stage="2", role="worker", run_id=7,
+        matrix_entry={"harness": "codex", "primary_model": "provider/model-x"},
+        bindings=bindings, worktree_path=tmp_path / "wt",
+        timeout_seconds=60, idempotency_key="idem-7", command_sha256=COMMAND_SHA)
+    receipt = make_receipt(request, exe)
+    manifest = make_manifest(tmp_path, task_id="T-OTHER")
+    home = provision_home(tmp_path, manifest)
+    with pytest.raises(RunnerAttestationError, match="different task"):
+        verify_execution_identity(receipt=receipt, request=request, home=home,
                                   orchestrator=SID_ORCH,
                                   identity_probe=_stub_identity())
 
@@ -446,7 +496,7 @@ def test_receipt_integrity_requires_capture_dir(tmp_path):
                            manifest_sha=manifest_sha256(manifest))
     with pytest.raises(RunnerAttestationError, match="capture re-hash unavailable"):
         verify_receipt_integrity(receipt=receipt, request=request,
-                                 manifest=manifest, capture_dir=None)
+                                 home=provision_home(tmp_path, manifest), capture_dir=None)
 
 
 def test_receipt_integrity_rehashes_captures(tmp_path):
@@ -463,13 +513,16 @@ def test_receipt_integrity_rehashes_captures(tmp_path):
     receipt["stderr_sha256"] = digest_file(captures / "7.stderr.bin")
     receipt["capture_meta_sha256"] = digest_file(captures / "7.capture-meta.json")
     outcome = verify_receipt_integrity(receipt=receipt, request=request,
-                                       manifest=manifest, capture_dir=captures)
+                                       home=provision_home(tmp_path, manifest), capture_dir=captures)
     assert outcome["integrity_verified"] is True
     assert outcome["attested"] is False  # never a live identity claim
+    assert outcome["runner_identity_attested"] is False
+    assert outcome["levels"]["L4_identity_attested"] is False
+    assert outcome["levels"]["L3_manifest_anchored"] is True
     (captures / "7.stdout.bin").write_bytes(b"TAMPERED")
     with pytest.raises(RunnerAttestationError, match="capture digest mismatch"):
         verify_receipt_integrity(receipt=receipt, request=request,
-                                 manifest=manifest, capture_dir=captures)
+                                 home=provision_home(tmp_path, manifest), capture_dir=captures)
 
 
 def test_receipt_integrity_rejects_foreign_manifest(tmp_path):
@@ -479,7 +532,7 @@ def test_receipt_integrity_rejects_foreign_manifest(tmp_path):
                            manifest_sha="e" * 64)
     with pytest.raises(RunnerAttestationError, match="different runner manifest"):
         verify_receipt_integrity(receipt=receipt, request=request,
-                                 manifest=manifest, capture_dir=tmp_path)
+                                 home=provision_home(tmp_path, manifest), capture_dir=tmp_path)
 
 
 # ------------------------------------------------------------------- client
