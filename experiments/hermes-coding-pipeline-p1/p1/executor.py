@@ -15,6 +15,10 @@ from .contracts import atomic_write, canonical, ContractError, digest_file, read
 class InvocationError(RuntimeError):
     pass
 
+# This is a code-level integration gate, not a user-controlled JSON field.
+# Stage 2 must implement and independently audit trusted execution provenance.
+TRUSTED_INTEGRATION_EXECUTION_VERIFIED = False
+
 
 def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run_id: int) -> dict[str, Any]:
     assignment = read_json(task_root/"snapshots"/"matrix.json")["roles"][role]
@@ -31,10 +35,17 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
         result=read_json(source)
         raw=canonical(result)+"\n"
         atomic_write(logs/f"{run_id}.stdout.json",raw)
+        atomic_write(logs/f"{run_id}.stderr.bin", b"")
         return {"payload":result,"mode":"fixture","exit_code":0,"stdout_sha256":sha256(raw.encode()),"stderr_sha256":sha256(b""),"assignment":assignment,"command":[],"run_id":run_id}
 
     if mode != "integration":
         raise InvocationError(f"unsupported mode: {mode}")
+    # Independent audit P1-001/003/005/021: an arbitrary local wrapper cannot
+    # prove the provider/model actually ran, read the full case or ran tests.
+    # No trustworthy runner-verification protocol has been integrated yet.
+    # Never call a paid model and then treat its self-reported JSON as evidence.
+    if not TRUSTED_INTEGRATION_EXECUTION_VERIFIED:
+        raise InvocationError("integration execution disabled: trusted Harness provenance and test attestation are NOT_VERIFIED")
     adapters=read_json(Path(task["adapter_config"]))
     profile=adapters.get("harnesses",{}).get(assignment["harness"])
     if not isinstance(profile,dict) or not profile.get("argv"):
@@ -68,6 +79,12 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
     try:
         outcome=subprocess.run(argv,cwd=workdir,capture_output=True,timeout=int(profile.get("timeout_seconds",900)),env=env)
     except subprocess.TimeoutExpired as exc:
+        # Exception holds useful partial evidence; save before reconciliation.
+        atomic_write(logs/f"{run_id}.stdout.bin", exc.stdout or b"")
+        atomic_write(logs/f"{run_id}.stderr.bin", exc.stderr or b"")
+        atomic_write(logs/f"{run_id}.timeout.json", canonical({"timeout_seconds":exc.timeout,
+            "stdout_sha256":digest_file(logs/f"{run_id}.stdout.bin"),
+            "stderr_sha256":digest_file(logs/f"{run_id}.stderr.bin")})+"\n")
         raise InvocationError("runner timed out; external execution state needs reconciliation") from exc
     out=logs/f"{run_id}.stdout.bin"; err=logs/f"{run_id}.stderr.bin"
     atomic_write(out,outcome.stdout); atomic_write(err,outcome.stderr)

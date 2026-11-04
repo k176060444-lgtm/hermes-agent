@@ -56,7 +56,11 @@ def main(argv=None)->int:
                 return 0
             else:raise ValueError("unsupported command")
             print(json.dumps(result,indent=2,ensure_ascii=False))
-            return 0
+            status=result.get("status") if isinstance(result,dict) else None
+            if args.command=="audit":
+                if result["evidence"]["verdict"]=="NON_COMPLIANT":return 14
+                return 0
+            return {"FAILED":10,"BLOCKED":11,"NEEDS_RECONCILIATION":12}.get(status,0)
         finally:pipe.close()
     except (ContractError,PipelineError,StateError,OSError,ValueError) as exc:
         print(json.dumps({"error":str(exc)},ensure_ascii=False),file=sys.stderr)

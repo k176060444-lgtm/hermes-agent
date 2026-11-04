@@ -24,3 +24,9 @@ Required P0 confirmations before Stage 2 integration:
 8. Location / ownership of original remote evidence (no fake copied report).
 
 P1 intentionally allows offline mocked reports only in `offline_fixture` mode and labels them `SIMULATED`.
+
+## P1 Round-001 alignment request
+
+Current P1 `submit` now includes `task_id`, `commit_sha`, `matrix_sha256`, `spec_sha256`, `souls_sha256`, `blind_roles` (each approved harness/model/node/permission) and `idempotency_key`.
+
+P0 must confirm if it supports these keys directly, or propose a canonical authenticated contract reference. A collection in the real integration path must bind all immutable inputs and prove independently verified physical node identities; self-supplied booleans or evidence-reference strings are not a trust anchor. Until a contract is approved, the P1 real integration hard gate remains CLOSED.

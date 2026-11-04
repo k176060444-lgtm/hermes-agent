@@ -39,8 +39,19 @@ def call_adapter(task: dict, task_root: Path, operation: str, request: dict) -> 
 
 def validate_collection(task: dict, matrix: dict, collection: dict, task_root:Path) -> list[str]:
     errors=[]
-    for field, expected in (("task_id",task["task_id"]),("commit_sha",task["commit_sha"]),("matrix_sha256",task["matrix_sha256"])):
+    if task["mode"] == "integration":
+        # A bool/reference in a self-reported JSON document is not proof of
+        # separate physical machines. Wait for the independently verified P0 API.
+        errors.append("integration A2A trusted physical identity contract NOT_VERIFIED")
+    for field, expected in (("task_id",task["task_id"]),("commit_sha",task["commit_sha"]),
+                            ("matrix_sha256",task["matrix_sha256"])):
         if collection.get(field)!=expected:errors.append(f"A2A {field} does not match approved task")
+    # P0 schema negotiation is pending. In offline fixtures additional bindings
+    # are optional; integration requires them (and independently verified hosts).
+    for field in ("spec_sha256", "souls_sha256"):
+        if task["mode"]=="integration" or field in collection:
+            if collection.get(field)!=task.get(field):
+                errors.append(f"A2A {field} does not match approved task")
     reports=collection.get("reports",[])
     if not isinstance(reports,list):return ["A2A reports must be array"]
     approved={matrix["roles"][key]["node"] for key in ("blind_a","blind_b","blind_c")}
@@ -56,8 +67,9 @@ def validate_collection(task: dict, matrix: dict, collection: dict, task_root:Pa
             errors.append("duplicate/empty A2A physical host id");continue
         if report.get("commit_sha")!=task["commit_sha"]:
             errors.append("A2A report based on wrong commit");continue
-        if not report.get("report") or not report.get("verdict"):
-            errors.append("A2A report missing verdict/content");continue
+        if not report.get("report") or report.get("verdict") not in (
+                "APPROVE", "APPROVE_WITH_COMMENTS", "REQUEST_CHANGES", "QUESTION", "NEEDS_SPECIALIST"):
+            errors.append("A2A report missing/invalid verdict/content");continue
         if task["mode"]=="integration":
             # P0 adapter must attest physical host independently of self-reported JSON.
             # Until its trust anchor contract is agreed this is deliberately blocked.

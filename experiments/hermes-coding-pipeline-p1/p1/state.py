@@ -61,6 +61,13 @@ class Store:
         prev_row = self.db.execute("SELECT event_hash FROM events WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
         prev = prev_row[0] if prev_row else "0"*64
         timestamp = time.time()
+        payload = dict(payload)
+        current_task = self.db.execute("SELECT data FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        if current_task is None:
+            raise StateError("missing task while journaling")
+        # Tie the mutable task row to the append-only hash chain. Detect row-only
+        # tampering before any subsequent dispatch, not just at final Gate 5.85.
+        payload["_task_sha256"] = hashlib.sha256(current_task[0].encode("utf-8")).hexdigest()
         serialized = canonical(payload)
         body = canonical({"task_id":task_id,"created_at":timestamp,"kind":kind,"payload":serialized,"prev_hash":prev})
         current = hashlib.sha256(body.encode()).hexdigest()
@@ -79,6 +86,16 @@ class Store:
             if d["prev_hash"] != prev or d["event_hash"] != actual:
                 errors.append(f"event {d['id']}: hash-chain mismatch")
             prev = d["event_hash"]
+        latest = rows[-1] if rows else None
+        if latest:
+            try:
+                expected = json.loads(latest["payload"])["_task_sha256"]
+                current = self.db.execute("SELECT data FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                actual = hashlib.sha256(current[0].encode("utf-8")).hexdigest()
+                if expected != actual:
+                    errors.append("task row does not match the last journal state hash")
+            except (KeyError, ValueError, TypeError, IndexError) as exc:
+                errors.append(f"task state journal integrity error: {exc}")
         return errors
 
     def start_run(self, task_id: str, stage: str, role: str, input_sha: str, details: dict) -> int:

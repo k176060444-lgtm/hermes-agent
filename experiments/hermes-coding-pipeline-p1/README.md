@@ -1,6 +1,6 @@
 # Hermes Coding Pipeline P1 — candidate implementation
 
-**Status: initial isolated implementation, offline tests only; not approved for real coding calls or deployment.**
+**Status: Round-001 FAIL remediation candidate, offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
 
 P1 receives two outputs from Hermes Gate 0.1: (1) approved user intent and goals, and (2) approved 12-role Harness/model/node matrix. It programmatically controls Phase 0.2 through Gate 5.9. Hermes remains the human-facing Orchestrator; P1 is its deterministic execution kernel. P2 intent/matrix conversation automation and Phase 6/7 deployment/cleanup are explicitly excluded.
 
@@ -27,8 +27,8 @@ Each phase exit has lightweight compliance checks: approved inputs/Soul, role/ph
 - Only `21bao` (Windows) is expected for local roles. `5bao`, `9bao`, `rusty` (Debian) are remote A2A candidates. Names and Harness/models live in `config/role_matrix.template.json`, not embedded in the role dispatcher. The P0 adapter, not P1, selects and runs remote agents.
 - `souls/*.md` are canonical, source-controlled role instruction contracts. Installing them as **native Codex and OpenCode agent configurations** is **P1 Stage 2 in a new session**, not done here. Soul instructions alone do not physically prevent writes; P1 uses before/after inventory plus role-audit rules. A write-then-restore operation is not detectable from final SHA alone.
 - The template matrix deliberately contains `null` models and will be rejected until filled with genuinely approved model identifiers. Harness bindings in the template are **candidate defaults**, not immutable roles hardcoded in Python.
-- The code can run local disposable Git worktrees in offline mode. Integration mode requires native Windows `E:` worktree, a safety manifest and explicitly authorized external wrappers. It does not edit existing Hermes configs.
-- Real Codex/OpenCode wrappers and a trusted P0 adapter must be supplied and tested before integration mode can be declared accepted. The sample adapter file has disabled authorizations; it is not a working system integration.
+- The code can run disposable Git worktrees in offline mode. **All `integration` execution currently fails closed at the workflow entry**, before launching any role, because trusted model execution, genuine test receipts and physical-node attestation are not available. This is a deliberately unimplemented Stage 2 contract, **not a successful live adapter**. Native Windows `E:` worktree, safety manifest and live side-effect guards remain NOT_VERIFIED.
+- A trusted, independently auditable Codex/OpenCode execution protocol and a trusted P0 adapter must be supplied and tested before the real-integration hard lock can be removed, and any such removal needs a new independent audit. The sample adapter file has disabled authorizations; it is not a working system integration.
 - No `deploy`, `merge`, `push`, `production reload`, `cleanup production` or `Gate 5.9 approve-and-release` command is provided.
 
 ## Layout
@@ -42,7 +42,7 @@ Each phase exit has lightweight compliance checks: approved inputs/Soul, role/ph
 - `p1/gitops.py` — Git snapshot/diff and worktree creation
 - `souls/` — 12 versioned role responsibilities, boundaries and output expectations
 - `config/` — defaults/templates; **never add secrets**
-- `tests/` — offline tests, fake agents, local temporary Git repos, no paid provider calls
+- `tests/` — offline tests, fake agents, local temporary Git repos, no paid provider calls; Round-001 regression probes in `tests/test_remediation_round1.py`
 - `prompts/AGENT_AUDIT_PROMPT.md` — external agent's mandatory read-only coding audit prompt
 - `prompts/STAGE2_NEW_SESSION_PROMPT.md` — handoff for separate real-config session
 - `audit_evidence/P1/` — standardized audit drop path on GitHub branch
@@ -88,4 +88,4 @@ External audit agents must review **the exact P1 Git commit**, then upload repor
 
 ## Important unverified / unfinished edges
 
-See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md). Key blockers before real execution: trust of external job reports/physical identity; verified Codex/OpenCode wrapper outputs and role permissions on 21bao; real Magpie provenance; live-safe side-effect Kill guard; independent human-approval provenance; managed Git evidence commits and recovery after ambiguous external invocations. Passing mocks does not waive these blockers.
+See [`docs/ROUND_001_REMEDIATION.md`](docs/ROUND_001_REMEDIATION.md) for the complete 29-finding disposition and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) for remaining blockers. Key blockers before real execution: trust of external job reports/physical identity; verified Codex/OpenCode wrapper outputs and role permissions on 21bao; real Magpie provenance; live-safe side-effect Kill guard; independent human-approval provenance; managed Git evidence commits and recovery after ambiguous external invocations. Passing mocks does not waive these blockers.

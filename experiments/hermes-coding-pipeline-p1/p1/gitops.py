@@ -22,6 +22,30 @@ def clean(repo: Path) -> bool:
     return not git(repo,"status","--porcelain","--untracked-files=normal")
 
 
+def index_digest(repo: Path) -> str:
+    """Git index SHA (staged blobs, paths, file modes, index stages)."""
+    result=subprocess.run(["git","-C",str(repo),"ls-files","--stage","-z"],capture_output=True,timeout=60)
+    if result.returncode:
+        raise ContractError("cannot inspect Git index")
+    return sha256(result.stdout)
+
+
+def git_status(repo: Path) -> str:
+    return git(repo, "status", "--porcelain=v1", "--untracked-files=all")
+
+
+def test_commit_transition(repo: Path, previous: str, current: str) -> tuple[bool, list[str]]:
+    """Accept tester-created commits only when additive descendants and test-only."""
+    if previous == current:
+        return True, []
+    ancestor=subprocess.run(["git","-C",str(repo),"merge-base","--is-ancestor",previous,current],
+                            capture_output=True,timeout=60)
+    if ancestor.returncode:
+        return False, []
+    delta=git(repo,"diff","--name-only",previous,current).splitlines()
+    return all(test_path(p) for p in delta), delta
+
+
 def inventory(root: Path) -> dict[str,str]:
     """Hash all Git-visible tracked and non-ignored untracked files including test files.
 
