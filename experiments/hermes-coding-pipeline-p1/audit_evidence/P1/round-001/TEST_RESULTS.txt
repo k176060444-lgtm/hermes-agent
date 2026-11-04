@@ -1,4 +1,4 @@
-AUDIT_STATUS: INCOMPLETE — preliminary evidence; additional cross-checks pending.
+AUDIT_STATUS: COMPLETE for offline code audit; actual integration/production NOT_VERIFIED.
 Severity mapping: P0=BLOCKER, P1=HIGH, P2=MEDIUM, P3=LOW.
 
 P1 independent audit — actual offline test record
@@ -491,3 +491,352 @@ def test_budget_persists_across_pipeline_reopen(scenario, budget):
 
 
 ===== END test_audit_probes.py =====
+
+
+===== CONTINUATION AFTER CHECKPOINT f1e4f85 =====
+The audited source SHA stayed 13d282596b9afee734996bb7a28ece1ace97c537. The checkpoint commit added only the four audit reports.
+Additional probe source: tests/test_resume_audit.py in the isolated test copy, included verbatim below.
+Same environment and offline command prefix as above; each group used its own --basetemp and --junitxml. Results are evidence of observed behavior, not fixes.
+- -k 'gate01_approval or gate02_state or rogue_unregistered or modified_raw or real_git_index': exit 0, 5 passed, 10 deselected, 9.57s. Outputs: frozen approved=False still WAITING_APPROVAL; state-row tamper gate02 event count 0 yet stage 3+4; unregistered arbitration verification COMPLIANT and exported; stdout corruption COMPLIANT; staged README change invisible to inventory/audit.
+- -k 'tester_head or replay_worker or unresolved_structured or explicit_fixture or worker_outputs': exit 0, 5 passed, 10 deselected, 12.75s. Outputs: injected local HEAD changed while old SHA reached gate 5.9; replay Worker ran on changed HEAD; unresolved structured QUESTION progressed; simulated=true payload labeled integration and COMPLIANT; bare PASS workers had zero reports.
+- -k 'duplicate_blind or terminal_a2a or timeout_partial or partial_initialization or corrupted_event': exit 0, 5 passed, 10 deselected, 5.91s. Outputs: duplicate seats accepted; FAILED job remains WAITING_EXTERNAL with one submit; injected timeout partial logs absent; partial initialization cannot retry; corrupted journal detected only after fixture roles ran.
+- -k 'mutable_adapter or a2a_submission_omits': exit 0, 2 passed, 15 deselected, 2.65s. Observed changed local wrapper and P0 request keys [commit_sha,idempotency_key,matrix_sha256,task_id].
+- Updated test_mutable_adapter_changes_executable_without_snapshot_error was rerun separately: exit 0, 1 passed, 16 deselected, 0.70s; different local adapter command produced STUB-A then STUB-B under the same assignment. This is a repeat of one named test, not an extra unique case.
+- 17 distinct continuation cases; 19 distinct earlier independent cases; 18 original assertion cases under adapted fixture: 54 distinct total, 0 failures/0 errors in successful groups. The adapter-test rerun and the earlier reopen-test version are not double-counted.
+- SQLite tampering tests explicitly assume local state DB write access. HEAD change tests use git update-ref only in the disposable worktree and do not create new Git commits. The index test uses git add only in that disposable worktree. Timeout is injected. No remote node, real P0, live model or paid call was used.
+
+===== BEGIN test_resume_audit.py (exact final probe source) =====
+"""Continuation probes: disposable local data; no remote/model calls.
+Assertions express observed candidate behavior, not desired behavior.
+"""
+from __future__ import annotations
+import json
+import subprocess
+import sys
+from pathlib import Path
+import pytest
+import p1.contracts as contracts
+import p1.workflow as workflow
+from p1.audit import audit_role
+from p1.contracts import canonical, digest_file, read_json, ContractError
+from p1.gitops import git, head, inventory
+from p1.workflow import Pipeline, initialize
+from test_pipeline import start, approve
+from test_audit_probes import _fake_local_runner
+
+
+def test_gate01_approval_snapshot_time_of_check_race(scenario, monkeypatch):
+    s = scenario
+    original = contracts.shutil.copyfile
+    def swap_approval(src, dst, *args, **kwargs):
+        if Path(src) == s['gate01']:
+            approval = read_json(s['gate01'])
+            approval['approved'] = False
+            s['gate01'].write_text(canonical(approval) + '\n', encoding='utf-8')
+        return original(src, dst, *args, **kwargs)
+    monkeypatch.setattr(contracts.shutil, 'copyfile', swap_approval)
+    p = start(s)
+    try:
+        frozen = read_json(s['home'] / 'snapshots' / 'gate01.json')
+        print('frozen approval approved=', frozen['approved'], '; status=', p.status()['status'])
+        assert frozen['approved'] is False and p.status()['status'] == 'WAITING_APPROVAL'
+    finally:
+        p.close()
+
+
+def test_gate02_state_row_tamper_skips_approval(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        task = p.store.load(p.task_id)
+        task.update(stage='1', status='READY')
+        with p.store.db:
+            p.store.db.execute('UPDATE tasks SET data=? WHERE task_id=?', (canonical(task), p.task_id))
+        errors = p.store.audit_events(p.task_id)
+        out = p.run(max_steps=2)
+        approved_events = p.store.db.execute("SELECT count(*) FROM events WHERE task_id=? AND kind='gate02_approved'", (p.task_id,)).fetchone()[0]
+        print('row-only tamper: chain_errors=', errors, '; stage=', out['stage'], '; spec=', out['spec_sha256'], '; gate approval events=', approved_events)
+        assert not errors and out['stage'] == '3+4' and out['spec_sha256'] is None and approved_events == 0
+    finally:
+        p.close()
+
+
+def test_rogue_unregistered_arbitration_exported(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        assert approve(p, s)['status'] == 'WAITING_GATE_5_9'
+        rogue = s['home'] / 'artifacts' / '9999_5_3_arbitrator.md'
+        rogue.write_text('UNREGISTERED-ARBITRATION-FIXTURE\n', encoding='utf-8')
+        ev = p.verify_evidence()
+        exported = p.export_report()
+        print('unregistered arbitration: verify=', ev['verdict'], '; injected exported=', 'UNREGISTERED-ARBITRATION-FIXTURE' in exported)
+        assert ev['verdict'] == 'COMPLIANT' and 'UNREGISTERED-ARBITRATION-FIXTURE' in exported
+    finally:
+        p.close()
+
+
+def test_modified_raw_stdout_not_verified(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        assert approve(p, s)['status'] == 'WAITING_GATE_5_9'
+        rid = p.store.results(p.task_id)[0]['id']
+        log = s['home'] / 'logs' / f'{rid}.stdout.json'
+        log.write_text('CORRUPTED-ORIGINAL-STDOUT\n', encoding='utf-8')
+        ev = p.verify_evidence()
+        print('modified role stdout verification=', ev['verdict'])
+        assert ev['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_real_git_index_only_change_misses_readonly_audit(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        assert p.run(max_steps=1)['stage'] == '2'
+        repo = s['worktree']
+        before = inventory(repo)
+        old = (repo / 'README.md').read_bytes()
+        (repo / 'README.md').write_bytes(old + b'\nSTAGED-INDEX-ONLY-FIXTURE\n')
+        subprocess.check_call(['git', '-C', str(repo), 'add', '--', 'README.md'])
+        (repo / 'README.md').write_bytes(old)
+        after = inventory(repo)
+        current_head = head(repo)
+        task = p.store.load(p.task_id)
+        hashes = read_json(s['home'] / 'snapshots' / 'soul_hashes.json')
+        envelope = {'exit_code': 0, 'mode': 'fixture', 'payload': {'verdict': 'APPROVE', 'report': 'SIMULATED',
+                    'reviewed_commit': current_head, 'spec_sha256': task['spec_sha256']}}
+        result = audit_role(task, 'quality_reviewer', '4', envelope, before, after, current_head, current_head,
+                            hashes['quality_reviewer'], s['home'])
+        staged = git(repo, 'diff', '--cached', '--name-only')
+        print('staged files=', repr(staged), '; same worktree inventory=', before == after, '; audit=', result['verdict'])
+        assert 'README.md' in staged and before == after and result['verdict'] == 'COMPLIANT'
+    finally:
+        p.close()
+
+
+def test_tester_head_change_leaves_arbitration_on_old_sha(scenario, monkeypatch):
+    s = scenario
+    original = workflow.invoke
+    def fake_invoke(task, role, stage, root, attempt, run_id):
+        result = original(task, role, stage, root, attempt, run_id)
+        if role == 'tester_gate_b':
+            repo = Path(task['worktree_path'])
+            parent = git(repo, 'rev-parse', 'HEAD~1')
+            git(repo, 'update-ref', 'HEAD', parent)
+        return result
+    monkeypatch.setattr(workflow, 'invoke', fake_invoke)
+    p = start(s)
+    try:
+        out = approve(p, s)
+        actual = head(s['worktree'])
+        arbitration = [r for r in p.store.results(p.task_id) if r['role'] == 'arbitrator'][-1]
+        details = json.loads(arbitration['details'])
+        print('tester changed HEAD via disposable ref injection: actual=', actual, '; recorded=', out['commit_sha'],
+              '; arbitration citation=', details['payload']['reviewed_commit'], '; outcome=', out['status'])
+        assert out['status'] == 'WAITING_GATE_5_9'
+        assert actual != out['commit_sha'] == details['payload']['reviewed_commit']
+        assert details['before_head'] == actual
+    finally:
+        p.close()
+
+
+def test_replay_worker_runs_on_changed_head_without_reconciliation(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user', 'offline-approval', s['spec_sha'])
+        assert p.run(max_steps=8)['stage'] == '5.85'
+        repo = s['worktree']
+        initial = s['commit']
+        parent = git(repo, 'rev-parse', 'HEAD~1')
+        git(repo, 'update-ref', 'HEAD', parent)
+        worker_report = sorted((s['home'] / 'artifacts').glob('*_worker.md'))[-1]
+        worker_report.write_text('CORRUPTED-OFFLINE-WORKER-REPORT\n', encoding='utf-8')
+        out = p.run(max_steps=2)
+        workers = [r for r in p.store.results(p.task_id) if r['role'] == 'worker']
+        last_head = json.loads(workers[-1]['details'])['before_head']
+        print('replay original HEAD=', initial, '; injected HEAD=', parent, '; replay worker HEAD=', last_head, '; stage=', out['stage'], '; status=', out['status'])
+        assert last_head == parent and last_head != initial and out['status'] != 'NEEDS_RECONCILIATION'
+    finally:
+        p.close()
+
+
+def test_unresolved_structured_question_with_approve_proceeds(scenario):
+    s = scenario
+    data = {'verdict':'APPROVE', 'report':'SIMULATED unresolved QUESTION',
+            'findings':[{'category':'QUESTION','resolved':False,'text':'needs clarification'}],
+            'reviewed_commit':s['commit'], 'spec_sha256':s['spec_sha']}
+    (s['fixtures']/'3-spec_reviewer.json').write_text(canonical(data)+'\n',encoding='utf-8')
+    p = start(s)
+    try:
+        out = approve(p, s)
+        print('APPROVE with unresolved structured QUESTION ->', out['status'])
+        assert out['status'] == 'WAITING_GATE_5_9'
+    finally:
+        p.close()
+
+
+def test_explicit_fixture_result_labeled_as_integration(scenario):
+    s = scenario
+    payload = {'verdict':'PASS','task_spec':'LOCAL STUB SPEC', 'mode':'fixture','simulated':True}
+    adapter = _fake_local_runner(s, payload, 'codex')
+    souls = Path(__file__).resolve().parents[1]/'souls'
+    initialize(s['home'],'TEST-001',s['intent'],s['matrix'],s['gate01'],souls,s['project'],s['worktree'],
+               'integration',adapter_config=adapter)
+    p = Pipeline(s['home'])
+    try:
+        out = p.run(max_steps=1)
+        run = p.store.results(p.task_id)[0]
+        details = json.loads(run['details'])
+        print('payload simulated=', details['payload']['simulated'], '; invocation mode=', details['invocation']['mode'],
+              '; audit=', details['audit']['verdict'], '; status=', out['status'])
+        assert details['payload']['simulated'] is True and details['invocation']['mode'] == 'integration'
+        assert details['audit']['verdict'] == 'COMPLIANT' and out['status'] == 'WAITING_APPROVAL'
+    finally:
+        p.close()
+
+
+def test_worker_outputs_with_no_reports_reach_final(scenario):
+    s = scenario
+    for filename in ('2-worker.json','5_1-worker_remediation.json'):
+        (s['fixtures']/filename).write_text(canonical({'verdict':'PASS'})+'\n',encoding='utf-8')
+    p = start(s)
+    try:
+        out = approve(p, s)
+        worker_files = list((s['home']/'artifacts').glob('*_worker.md')) + list((s['home']/'artifacts').glob('*_worker_remediation.md'))
+        print('bare PASS workers ->', out['status'], '; required worker reports=', len(worker_files))
+        assert out['status'] == 'WAITING_GATE_5_9' and not worker_files
+    finally:
+        p.close()
+
+
+def test_duplicate_blind_candidate_matrix_passes(scenario):
+    s = scenario
+    matrix = read_json(s['matrix'])
+    matrix['roles']['blind_c']['node'] = '5bao'
+    matrix['blind_review']['candidates'] = ['5bao','5bao','9bao']
+    result = contracts.validate_matrix(matrix)
+    print('duplicate candidates accepted=', result is None, '; candidates=', matrix['blind_review']['candidates'])
+    assert result is None
+
+
+def test_terminal_a2a_failed_status_stays_waiting(scenario, monkeypatch):
+    s = scenario
+    calls=[]
+    def fake(task, root, op, request):
+        calls.append(op)
+        if op == 'submit': return {'job_id':'LOCAL-JOB'}
+        if op == 'status': return {'state':'FAILED'}
+        raise AssertionError(op)
+    monkeypatch.setattr(workflow,'call_adapter',fake)
+    p = start(s)
+    try:
+        p.approve_spec('user','offline-approval',s['spec_sha'])
+        out = p.run()
+        again = p.resume()
+        print('A2A terminal FAILED ->',out['status'],'; resume ->',again['status'],'; calls=',calls)
+        assert out['status'] == again['status'] == 'WAITING_EXTERNAL' and calls.count('submit') == 1
+    finally:
+        p.close()
+
+
+def test_timeout_partial_logs_discarded(scenario, monkeypatch):
+    s = scenario
+    s['init']()
+    from p1.executor import invoke, InvocationError
+    adapter = _fake_local_runner(s, {'verdict':'PASS'}, 'codex')
+    task = {'mode':'integration','adapter_config':str(adapter),'task_id':'TEST-001',
+            'project_root':str(s['project']),'worktree_path':str(s['worktree'])}
+    def timeout(*args,**kwargs):
+        raise subprocess.TimeoutExpired(args[0], 1, output=b'PARTIAL-STDOUT', stderr=b'PARTIAL-STDERR')
+    monkeypatch.setattr(subprocess,'run',timeout)
+    with pytest.raises(InvocationError,match='timed out'):
+        invoke(task,'planner','0.2',s['home'],1,901)
+    logs=list((s['home']/'logs').glob('901.*'))
+    print('timeout partial stdout/stderr saved paths=',len(logs))
+    assert not logs
+
+
+def test_partial_initialization_cannot_be_retried(scenario):
+    s = scenario
+    missing = s['root']/'empty-soul-folder'
+    missing.mkdir()
+    with pytest.raises(ContractError,match='missing Soul'):
+        initialize(s['home'],'TEST-001',s['intent'],s['matrix'],s['gate01'],missing,s['project'],s['worktree'],
+                   'offline_fixture',fixture_dir=s['fixtures'])
+    with pytest.raises(ContractError,match='snapshot already exists'):
+        s['init']()
+    print('missing Soul leaves snapshots=',(s['home']/'snapshots').exists(),'; state.sqlite exists=',(s['home']/'state.sqlite').exists())
+    assert (s['home']/'snapshots').exists() and not (s['home']/'state.sqlite').exists()
+
+
+def test_corrupted_event_chain_does_not_block_dispatch(scenario):
+    s = scenario
+    p = start(s)
+    try:
+        p.approve_spec('user','offline-approval',s['spec_sha'])
+        with p.store.db:
+            p.store.db.execute("UPDATE events SET kind='TAMPERED' WHERE task_id=? AND id=(SELECT min(id) FROM events WHERE task_id=?)",(p.task_id,p.task_id))
+        prior = p.store.audit_events(p.task_id)
+        out = p.run()
+        roles=[r['role'] for r in p.store.results(p.task_id)]
+        print('journal errors before run=',len(prior),'; dispatched roles=',roles,'; final=',out['status'])
+        assert prior and 'worker' in roles and 'arbitrator' in roles and out['status']=='BLOCKED'
+    finally:
+        p.close()
+
+
+def test_mutable_adapter_changes_executable_without_snapshot_error(scenario):
+    s = scenario
+    s['init']()
+    from p1.executor import invoke
+    from p1.workflow import require_snapshot
+    adapter = _fake_local_runner(s, {'verdict':'PASS','task_spec':'A','runner_marker':'STUB-A'}, 'codex')
+    p = Pipeline(s['home'])
+    try:
+        task = p.store.load(p.task_id)
+        task['mode'] = 'integration'
+        task['adapter_config'] = str(adapter)
+        require_snapshot(task,s['home'])
+        first = invoke(task,'planner','0.2',s['home'],1,901)
+        replacement = s['root']/'different_fake_runner.py'
+        replacement.write_text('import json\nprint(json.dumps({"verdict":"PASS","task_spec":"B","runner_marker":"STUB-B"}))\n',encoding='utf-8')
+        changed = read_json(adapter)
+        changed['harnesses']['codex']['argv'][1] = str(replacement)
+        adapter.write_text(canonical(changed)+'\n',encoding='utf-8')
+        require_snapshot(task,s['home'])
+        second = invoke(task,'planner','0.2',s['home'],1,902)
+        print('same approved matrix after adapter command changed: first=',first['payload']['runner_marker'],
+              '; second=',second['payload']['runner_marker'], '; command changed=',first['command']!=second['command'],
+              '; assignment equal=',first['assignment']==second['assignment'])
+        assert first['payload']['runner_marker']=='STUB-A' and second['payload']['runner_marker']=='STUB-B'
+        assert first['command']!=second['command'] and first['assignment']==second['assignment']
+    finally:
+        p.close()
+
+
+def test_a2a_submission_omits_spec_and_role_contract(scenario,monkeypatch):
+    s=scenario
+    seen=[]
+    def fake(task,root,op,request):
+        if op=='submit':
+            seen.append(request)
+            return {'job_id':'LOCAL-JOB'}
+        if op=='status': return {'state':'RUNNING'}
+        raise AssertionError(op)
+    monkeypatch.setattr(workflow,'call_adapter',fake)
+    p=start(s)
+    try:
+        p.approve_spec('user','offline-approval',s['spec_sha'])
+        out=p.run()
+        print('local fake P0 submit request keys=',sorted(seen[0]),'; status=',out['status'])
+        assert set(seen[0])=={'task_id','commit_sha','matrix_sha256','idempotency_key'}
+        assert 'spec_sha256' not in seen[0] and 'roles' not in seen[0] and out['status']=='WAITING_EXTERNAL'
+    finally:
+        p.close()
+
+===== END test_resume_audit.py =====

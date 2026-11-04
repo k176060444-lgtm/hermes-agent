@@ -3,13 +3,13 @@
   "branch": "feature/p1-coding-pipeline-20261104",
   "audited_commit_sha": "13d282596b9afee734996bb7a28ece1ace97c537",
   "audit_started_at": "2026-11-04T13:52:21+08:00",
-  "audit_completed_at": null,
+  "audit_completed_at": "2026-11-04T15:09:17+08:00",
   "source_root": "experiments/hermes-coding-pipeline-p1/",
   "test_mode": "offline_fixture + local stubbed integration paths; network Git protocol disabled during tests; test-copy fixture adapted",
   "auditor_identifier": "Hermes ling, independent P1 code-audit agent, group/gpt-6.1-terra via Magpie",
   "verdict": "FAIL",
   "real_21bao_integration_allowed": false,
-  "next_action": "离线整改并进行新一轮独立复审",
+  "next_action": "开发方甄别并离线修复后，针对新源码 SHA 开展下一轮独立复审",
   "file_scope": "P1 目录内全部受版本管理源码、配置模板、文档、12 份 Soul 和测试；不涉及现网配置或远端节点",
   "source_clean_at_audit": true,
   "test_environment": {
@@ -20,13 +20,24 @@
   },
   "baseline_test_files": 18,
   "baseline_fixture_adaptation": "测试副本将临时 git init/add/commit 改为克隆现成本地隔离 Git fixture；业务模块和 test_pipeline.py 哈希与审计源码一致",
-  "distinct_custom_probe_cases": 19,
+  "distinct_custom_probe_cases": 36,
   "external_network_or_real_a2a_used_in_tests": false,
-  "audit_status": "INCOMPLETE",
+  "audit_status": "COMPLETE",
   "checkpoint_at": "2026-11-04T14:52:28+08:00",
-  "incomplete_items": [
-    "核实并行复核提出的审批竞态、状态完整性、暂存区与 Tester SHA 基线等新增问题",
-    "完成各分段检查与报告最终交叉校验",
-    "真实生产服务、真实模型、远端节点不在本轮范围，均为 NOT_VERIFIED"
+  "checkpoint_commit_sha": "f1e4f85f491f3aa0b25ee791b4e785bf139f641b",
+  "distinct_test_cases_total": 54,
+  "final_code_findings": 29,
+  "severity_counts": {
+    "P0": 9,
+    "P1": 13,
+    "P2": 7,
+    "P3": 0
+  },
+  "unverified": [
+    "真实 Codex/OpenCode 和模型/网关物证",
+    "真实 P0 和远端节点/物理身份",
+    "Windows E: 真实集成工作树",
+    "真实硬崩溃、孙进程及生产权限隔离",
+    "真实人工审批来源与真实副作用 kill guard"
   ]
 }
