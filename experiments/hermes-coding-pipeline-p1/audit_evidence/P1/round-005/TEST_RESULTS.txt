@@ -1,0 +1,79 @@
+Hermes Coding Pipeline P1 - Round-005 independent audit test log
+Audited commit: 3be86f69b87d7f69c0f739d31615c5e0feda751b (tree b7eec8470fe2b14b0969fc012a2f566e2180c266)
+Host: 21bao Windows 10, Python 3.11.15, pytest offline fixtures + local stub subprocesses only
+Generated: 2026-11-04T19:47:06+08:00
+
+== 0. Source integrity (before and after every test run) ==
+files=67 mismatches=0 []
+
+== 1. Project test suite, verbatim from the audited snapshot (13 batches) ==
+cmd: python -B run_tests.py collect | python -B run_tests.py batch0..batch12
+runner: snapshot/experiments/hermes-coding-pipeline-p1 executed in-place, no fixture or product-test edits
+env: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 GIT_CONFIG_GLOBAL=NUL GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0
+batch0  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 24.49s
+batch1  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.64s
+batch2  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 17.96s
+batch3  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 20.39s
+batch4  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 9.10s
+batch5  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.55s
+batch6  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 18.88s
+batch7  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 5.71s
+batch8  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.08s
+batch9  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.08s
+batch10 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.65s
+batch11 exit=1 tests=8 failures=1 errors=0 skipped=0  1 failed, 7 passed in 23.21s
+batch12 exit=0 tests=5 failures=0 errors=0 skipped=3  2 passed, 3 skipped in 0.57s
+TOTAL collected=101 executed=101 passed=97 failed=1 errors=0 skipped=3
+NOTE developer claimed 101 passed; on Windows: 97 passed / 1 failed / 3 skipped.
+FAILED: test_remediation_round4.py::test_r4_002_test_filename_with_spaces_and_tabs (line 43)
+  OSError [Errno 22] Invalid argument creating 'test_空\t格.py' - Win32 forbids tab in filenames (fixture defect R5-003; product parsing verified independently correct).
+SKIPPED (POSIX-only): test_r4_001_private_boundary_checks_owner_and_mode,
+  test_r4_001_untrusted_integration_state_is_blocked_without_dispatch,
+  test_r4_001_private_integrated_state_allows_preflight_but_not_unverified_harness (coverage gap R5-004)
+EXECUTED on Windows: test_r2_008_bounded_streaming_stops_large_output, test_r2_008_normal_small_output_remains_complete (both passed)
+
+== 2. Independent adversarial probes (isolated probe-copy; product code untouched) ==
+file: probe-copy/tests/test_round5_independent.py (46 cases in 9 selector batches)
+test_positive_* assert remediation holds; test_defect_* pass when a gap is REPRODUCED (not product acceptance).
+t1   exit=0 tests=4 failures=0 errors=0 skipped=0 duration=4.203s  [trust entry points + live ACL spy + fail-closed paths + offline exemption (4 cases)]
+t2   exit=0 tests=2 failures=0 errors=0 skipped=0 duration=2.187s  [trust surface scope spy + offline Store._event forgery reproduction (2 cases)]
+t3   exit=0 tests=18 failures=0 errors=0 skipped=0 duration=8.687s  [unicode/special path acceptance x6 + non-collectable rejection x3 + negative x8 + unicode exam e2e (18 cases)]
+t3b  exit=0 tests=1 failures=0 errors=0 skipped=0 duration=0.719s  [tab filename platform behaviour (1 case)]
+t4   exit=0 tests=3 failures=0 errors=0 skipped=0 duration=5.141s  [unfinished-run reconciliation: orphan/resolved/healthy (3 cases)]
+t5   exit=0 tests=6 failures=0 errors=0 skipped=0 duration=1.766s  [stdout/stderr independent caps, dual-pipe no-deadlock, invalid limits (6 cases)]
+t6   exit=0 tests=3 failures=0 errors=0 skipped=0 duration=6.312s  [invoke() 9MB flood blocked at 8MiB, timeout/non-UTF8/non-object refusal, capture tamper defect (3 cases)]
+t7   exit=0 tests=7 failures=0 errors=0 skipped=0 duration=18.485s  [parallel reviewers same commit, run-row delete/mutate, Gate0.2 tamper, Pro-Audit scope, A2A fail-closed, 5/5/2 budgets cross-process, no-op gate (7 cases)]
+t8   exit=0 tests=2 failures=0 errors=0 skipped=0 duration=6.719s  [conftest end-to-end block + export_report tamper refusal (2 cases)]
+PROBE TOTAL cases=46 failures=0 errors=0 skipped=0; every batch exit code 0
+
+Key probe evidence lines (verbatim stdout):
+  [t1] os=nt status=BLOCKED preflight=FAILED run=BLOCKED evidence=NON_COMPLIANT dispatched=0 events=1->1 persisted=READY msg=NOT_VERIFIED: task state OS trust boundary invalid: NTFS ACL inherits permissions: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round005-audi
+  [t2] .offline-append chain_issues=[] stage=3+4 worktree=True
+  [t2] os=nt inspected=['.', 'state.sqlite'] never_inspected=['logs', 'artifacts', 'snapshots', 'audit_evidence', '.task.lock'] parent_inspected=False
+  [t3] .unicode-exam status=NEEDS_RECONCILIATION verdict=NON_COMPLIANT errors=['Worker changed/deleted protected Tester exam: tests/test_登录.py']
+  [t3b] win32_rejects_tab_names=OSError: Invalid argument; empty-delta parse still additive
+  [t4] orphan-gate02 status=NEEDS_RECONCILIATION persisted=WAITING_APPROVAL preflight=UNFINISHED_RUN ids=[2] run=NEEDS_RECONCILIATION events=8->8
+  [t4] .resolved status=WAITING_APPROVAL extra_keys=[]
+  [t5] stdout overflow len=1000000 meta={'limit_per_stream_bytes': 1000000, 'stdout_bytes_observed': 1048576, 'stderr_bytes_observed': 117, 'stdout_truncated': True, 'stderr_truncated': False, 'timed_out': False, 'output_limit_exceeded': True, 'returncode': 1}
+  [t5] .stderr overflow stdout=b'{"verdict":"PASS"}' meta={'limit_per_stream_bytes': 1000000, 'stdout_bytes_observed': 18, 'stderr_bytes_observed': 1048576, 'stdout_truncated': False, 'stderr_truncated': True, 'timed_out': False, 'output_limit_exceeded': True, 'returncode': 1}
+  [t5] .both pipes elapsed=0.06s returncode=1 stdout_len=2000000 stderr_len=117 truncated=True,False
+  [t6] invoke-overflow saved_bytes=8388608 cap=8388608 truncated=True observed=8454144 returncode=1
+  [t6] .capture-tamper before=COMPLIANT after=COMPLIANT bound_log_keys=['stderr', 'stderr_sha256', 'stdout', 'stdout_sha256']
+  [t7] parallel seen=['quality_reviewer', 'spec_reviewer'] audits=['quality_reviewer', 'spec_reviewer'] shas={'426ae16c955917eaeb57a94179cd2d717ad352c7'} status=WAITING_GATE_5_9
+  [t7] .binding delete_issues=['run 3: dispatch journal has no run row'] mutate_issues=['run 3: dispatch journal has no run row']
+  [t7] .pro-audit quality_text=COMPLIANT wrong_commit=NON_COMPLIANT errors=['spec_reviewer reviewed wrong commit']
+  [t7] .budget-A before=2 after=5 status=FAILED cli_exit=10
+  [t7] .noop-fake status=FAILED error=compliance retrace cap exceeded: no-op remediation requires structured no_op=true and none
+  [t8] conftest-regression status=NEEDS_RECONCILIATION
+
+== 3. Windows NTFS ACL forensics for p1/trust.py (disposable scratch dir) ==
+cmd: python -B acl_evidence.py   (icacls applied ONLY to acl-probe\* created for this test)
+  protected_DACL_current_user_only: ACCEPTED
+  after_Everyone_read_ACE_added: REJECTED - NTFS task state grants access to other principals
+  after_inheritance_reset: REJECTED - NTFS ACL inherits permissions: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round005-audit-
+  database_has_extra_Everyone_ACE: REJECTED - NTFS task state grants access to other principals
+Positive path ACCEPTED proves the check is a real DACL verdict, not an always-fail stub.
+
+== 4. Boundaries honored ==
+No paid model calls; no 5bao/9bao/rustyhand connections; no Hermes live-config or A2A node changes;
+no modification of audited source, Souls, or prior-round audit reports; probes ran only in probe-copy.

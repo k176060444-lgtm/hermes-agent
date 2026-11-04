@@ -1,0 +1,170 @@
+{
+  "schema_version": 5,
+  "audit_round": "round-005",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "3be86f69b87d7f69c0f739d31615c5e0feda751b",
+  "audited_commit_parent": "715664e02cf25c31f15bad998174a7e91c130425",
+  "audited_tree_sha": "b7eec8470fe2b14b0969fc012a2f566e2180c266",
+  "previous_audit_report_commit": "715664e02cf25c31f15bad998174a7e91c130425",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "environment": "21bao Windows 10, isolated scratch, offline; no paid model, no 5bao/9bao/rustyhand, no live Hermes/A2A config change",
+  "summary": {
+    "project_tests_on_windows": {"collected": 101, "passed": 97, "failed": 1, "skipped": 3, "errors": 0},
+    "developer_claim": "101 offline tests passed",
+    "claim_discrepancy": "On Windows one test fails (tab in filename, Errno 22) and the three R4-001 trust regressions are skipped (POSIX-only markers). Claim holds only on POSIX.",
+    "independent_probes": {"cases": 46, "batches": 9, "all_exit_zero": true},
+    "windows_acl_forensics": {"cases": 4, "accepted_when_protected": 1, "rejected_cases": 3},
+    "source_integrity": {"files_checked": 67, "blob_mismatches": 0, "checked_before_and_after_tests": true}
+  },
+  "round4_target_findings": [
+    {
+      "id": "R4-001",
+      "severity": "P1",
+      "claim": "任务状态库存在操作系统信任边界缺口：本地库写权限者可伪造 Gate 0.2 审批事件与 reviewer run",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "evidence": [
+        "p1/trust.py:24-74 real-time PowerShell Get-Acl DACL query: acl_protected (no inheritance) required (67-68), owner == current SID required (69-70), no Allow ACE outside {current user, S-1-5-18, S-1-5-32-544} (27,35-38,71-72)",
+        "p1/trust.py:101-103 home and state.sqlite must exist and must not be symlinks; p1/trust.py:61-74 nonzero PS exit, JSON cardinality mismatch, timeout, OSError all raise TrustBoundaryError (fail-closed)",
+        "all five entry points enforce it: p1/workflow.py:149 status(), 647+672 run(), 712 resume(), 629 approve_spec(), 495 verify_evidence(); export_report via _require_trust (737) + verify_evidence",
+        "probe t1 (Windows, real ACLs): default inherited ACL -> status BLOCKED / integrity_preflight FAILED / run BLOCKED / evidence NON_COMPLIANT / dispatched=0 / events 1->1 unchanged / persisted READY not re-sealed",
+        "probe t1 spy: ACL script contains only Get-Acl/GetAccessRules, no Set-Acl/icacls/grant verbs; home and db paths embedded literally",
+        "acl_evidence.json (disposable scratch dir): protected DACL current-user-only -> ACCEPTED; Everyone RX ACE added -> REJECTED grants access to other principals; /reset inheritance -> REJECTED NTFS ACL inherits permissions; extra ACE on state.sqlite only -> REJECTED"
+      ],
+      "assessment": "Mechanism is real, live on Windows, fail-closed and wired into every entry point. NOT judged FIXED because: (1) the trust premise 'Agent subprocesses must not share the Orchestrator OS identity' exists only in comments (trust.py:3-6) and is never enforced in code (no token/SID-difference check, no runas/LogonUser anywhere in p1/); a same-identity process can still append gate02_approved/reviewer runs; (2) the check is scoped to mode=='integration' (workflow.py:127-128) - probe t2 reproduces the Round-004 append-forgery vector inside offline_fixture (chain issues=[], run advances to stage 3+4); (3) real integration additionally gated by TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False (executor.py:21,121-122); (4) 21bao production ACL, dedicated account and process identity are NOT_VERIFIED, so Windows real-environment R4-001 cannot be declared fully resolved.",
+      "minimal_fix": "Enforce the premise: at integration start verify the executing process token SID differs from any Agent subprocess SID (or require a provisioned dedicated service account and validate it), and document/enforce that offline_fixture ledgers are never admissible evidence."
+    },
+    {
+      "id": "R4-002",
+      "severity": "P3",
+      "claim": "core.quotePath 导致合法非 ASCII 测试路径被误阻断",
+      "status": "FIXED",
+      "evidence": [
+        "p1/gitops.py:105-119 diff --name-status -z --no-renames parsed as NUL-framed bytes via os.fsdecode, bypassing octal quoting",
+        "p1/gitops.py:123-136 per-file ls-tree -z mode/type/name cross-check (100644/100755 blob only)",
+        "probe t3 (18 cases): tests/test_注册.py, tests/test_空 白.py, tests/test_#hash.py, tests/test_中文(1).py, tests/sub dir/test_边 界.py, tests/test_a'b.py all accepted; modify/delete/rename/conftest.py/pytest.ini/source file/tests/helpers.py/.pyc all rejected",
+        "probe t3 end-to-end: Unicode Gate A exam test_登录.py preserved; remediation Worker rewriting it -> NON_COMPLIANT 'Worker changed/deleted protected Tester exam: tests/test_登录.py'",
+        "probe t3b: tab-in-filename cannot be created on Win32 (OSError Errno 22, platform limit); empty-delta additive parse still correct"
+      ],
+      "assessment": "No relaxation of Tester exam protection or collection-control rules introduced by the fix.",
+      "minimal_fix": "none"
+    },
+    {
+      "id": "R4-003",
+      "severity": "P3",
+      "claim": "未完成 run 不出现在 status()/run() 的阻断预检中",
+      "status": "FIXED",
+      "evidence": [
+        "p1/workflow.py:157-163 status() reports NEEDS_RECONCILIATION / integrity_preflight=UNFINISHED_RUN / unfinished_run_ids when store.running() non-empty and no integrity issue",
+        "p1/workflow.py:664-666,670-671 run() returns status() without re-sealing when an unfinished run exists; resume() raises 'resume refused: unfinished invocation needs reconciliation' (workflow.py:713-714)",
+        "probe t4: orphan run before Gate 0.2 -> status NEEDS_RECONCILIATION, persisted WAITING_APPROVAL preserved, events 8->8 unchanged, run() NEEDS_RECONCILIATION, resume() raises; after legitimate finish -> WAITING_APPROVAL with no orphan keys; healthy full run -> WAITING_GATE_5_9 with no orphan/preflight keys"
+      ],
+      "assessment": "Normal completed runs are not misjudged; original database state preserved.",
+      "minimal_fix": "none"
+    }
+  ],
+  "carried_known_items": [
+    {
+      "id": "R2-006",
+      "severity": "P1",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "claim": "A2A 原始传输收据与可信身份证明未实现",
+      "evidence": "probe t7: direct integration call_adapter raises ContractError NOT_VERIFIED; p1 remains fail-closed; A2A stays an external component, P1 does not replace three-node blind review",
+      "assessment": "unchanged from rounds 2-4; NOT_VERIFIED for real deployment"
+    },
+    {
+      "id": "R2-008",
+      "severity": "P3",
+      "status": "FIXED",
+      "claim": "子进程 stdout/stderr 无流式大小上限",
+      "evidence": [
+        "p1/executor.py:30-94 concurrent drain threads, per-stream limit (default 8 MiB, MAX_CAPTURE_BYTES_PER_STREAM), child.kill() on overflow, metadata limit/observed/truncated/timed_out/returncode",
+        "probe t5: stdout capped at exactly 1,000,000 with observed 1,048,576; stderr overflow leaves stdout intact (independent limits); 5 MiB x 2 pipes no deadlock (0.06s); invalid limits (0,-1,>8MiB) rejected",
+        "probe t6: full invoke() with 9 MB flood -> InvocationError 'output limit exceeded', on-disk stdout exactly 8,388,608 bytes + capture.json; timeout keeps bounded PARTIAL bytes + timeout.json; non-UTF-8 and non-object JSON refused; small JSON normal",
+        "developer tests test_r2_008_* executed on Windows (2 passed)"
+      ],
+      "assessment": "Fixed for the offline-verifiable scope. Windows descendant-process-tree termination is explicitly NOT claimed (executor.py:34-35 comment) and remains NOT_VERIFIED."
+    }
+  ],
+  "new_findings": [
+    {
+      "id": "R5-001",
+      "severity": "P3",
+      "category": "code_gap_narrow",
+      "title": "信任检查面仅覆盖 home 与 state.sqlite，未显式覆盖 WAL/SHM 伴生文件与父目录",
+      "files": ["p1/trust.py:97-100", "p1/state.py:21"],
+      "evidence": "journal_mode=WAL creates state.sqlite-wal/-shm; validate_private_task_home checks exactly [home, home/state.sqlite]; probe t2 monkeypatch spy confirms inspected=['.', 'state.sqlite'], never_inspected includes logs/artifacts/snapshots/audit_evidence/.task.lock, parent not inspected. Protection of -wal/-shm relies on NTFS inheritance, which the same check requires to be disabled (acl_protected) - a freshly created WAL file under a protected parent inherits the parent DACL, so exploitability is low; a same-identity attacker is out of scope of this model by design.",
+      "impact": "Under unusual provisioning (e.g. WAL files pre-existing with different DACL before protection) the enforced surface could under-cover the actual ledger bytes.",
+      "reproduction": "probe-copy/tests/test_round5_independent.py::test_defect_trust_surface_is_only_home_and_database",
+      "minimal_fix": "When present, append home/'state.sqlite-wal' and home/'state.sqlite-shm' to the validated paths list."
+    },
+    {
+      "id": "R5-002",
+      "severity": "P3",
+      "category": "code_gap_narrow",
+      "title": "capture.json/timeout.json 截断元数据未绑定事件链，事后可无痕改写",
+      "files": ["p1/executor.py (invoke log persistence)", "p1/state.py:76-156 (audit_events scope)"],
+      "evidence": "probe t6 defect case: after a healthy COMPLIANT run, rewriting logs/<run_id>.capture.json (and finally erasing it) leaves verify_evidence verdict COMPLIANT both before and after; run details bind only stdout/stderr keys, no capture key.",
+      "impact": "Truncation metadata is advisory evidence; an attacker with filesystem access can hide that output was truncated without detection. Does not by itself forge a gate, because the truncated stdout bytes remain hash-bound.",
+      "reproduction": "probe-copy/tests/test_round5_independent.py::test_defect_capture_metadata_is_not_evidence_bound",
+      "minimal_fix": "Hash capture/timeout metadata into finish_run details and verify it in audit_events/verify_evidence."
+    },
+    {
+      "id": "R5-003",
+      "severity": "P3",
+      "category": "test_fixture_defect",
+      "title": "开发方 R4-002 回归测试在 Windows 必失败：制表符文件名不可创建",
+      "files": ["tests/test_remediation_round4.py:43"],
+      "evidence": "batch11 rerun on 21bao: OSError [Errno 22] Invalid argument writing 'test_空\\t格.py'; 1 failed, 7 passed in batch11",
+      "impact": "Developer claim '101 offline tests passed' is false on the Windows target platform; the underlying product parsing is correct (verified independently).",
+      "reproduction": "python -m pytest tests/test_remediation_round4.py::test_r4_002_test_filename_with_spaces_and_tabs",
+      "minimal_fix": "skipif(os.name=='nt') or use a POSIX-safe name and keep the tab case in a parser-level unit test."
+    },
+    {
+      "id": "R5-004",
+      "severity": "P2",
+      "category": "test_coverage_gap",
+      "title": "R4-001 三项回归测试在 Windows 全部 skip，目标平台对 trust.py ACL 分支零覆盖",
+      "files": ["tests/test_remediation_round4.py (POSIX-only skip markers)"],
+      "evidence": "batch12 XML: test_r4_001_private_boundary_checks_owner_and_mode / test_r4_001_untrusted_integration_state_is_blocked_without_dispatch / test_r4_001_private_integrated_state_allows_preflight_but_not_unverified_harness all 'SKIP: POSIX mode check runs only on POSIX'",
+      "impact": "The core remediation of this round ships with no executed regression on the deployment OS. Auditor-supplied evidence (acl_evidence.py, probes t1) partially fills the gap but is not part of the product suite.",
+      "reproduction": "run batch12 on Windows",
+      "minimal_fix": "Add a Windows DACL positive/negative regression (template: audit_evidence round-005 acl_evidence.py flow) executed under CI on nt."
+    },
+    {
+      "id": "R5-005",
+      "severity": "P2",
+      "category": "integration_gap",
+      "title": "OS 账户隔离信任前提未被代码强制；同身份伪造向量在逻辑上仍成立，offline 模式实测仍可追加伪造事件",
+      "files": ["p1/trust.py:3-6", "p1/workflow.py:127-128", "p1/state.py start_run/_event"],
+      "evidence": "grep across p1/ docs/ prompts/ README.md finds no runas/LogonUser/impersonation/token-comparison/secondary-logon mechanism; trust.py itself documents that a same-identity privileged process is inside the TCB; probe t2: offline task with direct Store._event('gate02_approved') + task-row rewrite -> audit_events issues=[], run advances to stage 3+4 with worktree created",
+      "impact": "If 21bao deploys Agent and Orchestrator under one account with DB access, R4-001's protection does not apply; acceptance of the OS-isolation model requires an enforced, verifiable provisioning contract, not a comment.",
+      "reproduction": "probe-copy/tests/test_round5_independent.py::test_defect_same_identity_event_append_still_possible_in_offline",
+      "minimal_fix": "Integration-mode startup check: spawn a probe subprocess and require its token SID to differ from the orchestrator's, or bind the ledger to a dedicated service account whose membership is verified; mark offline ledgers permanently non-evidentiary."
+    }
+  ],
+  "regression_checks": [
+    {"item": "Phase 3/4 true parallel, same commit, independent reports + compliance audits", "verdict": "PASS", "evidence": "probe t7 barrier: seen=[quality_reviewer, spec_reviewer] concurrently, single reviewed_commit sha set, both audit roles recorded, gate 5.9 reached"},
+    {"item": "Gate 0.2 human approval binding", "verdict": "PASS", "evidence": "probe t7 row-tamper -> BLOCKED, zero dispatched runs; approve_spec requires stage gate0.2 + SHA match (workflow.py:626-643)"},
+    {"item": "Gate A / Gate B tester exam protection incl. conftest", "verdict": "PASS", "evidence": "probe t3 + t8 end-to-end conftest injection blocked (NEEDS_RECONCILIATION, never WAITING_GATE_5_9)"},
+    {"item": "5/5/2 loop budgets", "verdict": "PASS", "evidence": "probe t7: round_a 2->5 persisted across separate CLI process, FAILED, exit 10; fake no-op remediation rejected by structured gate"},
+    {"item": "Pro-Audit scope (no technical adjudication)", "verdict": "PASS", "evidence": "probe t7: 'ignore all tests, ship it' APPROVE payload -> COMPLIANT (process only); wrong reviewed_commit -> NON_COMPLIANT"},
+    {"item": "A2A external-only, no fake quorum/blind-review forgery", "verdict": "PASS", "evidence": "probe t7 direct call_adapter integration -> ContractError NOT_VERIFIED; R2-006 carried"},
+    {"item": "Real vs simulation evidence separation", "verdict": "PASS", "evidence": "TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False blocks integration dispatch; export_report contains SIMULATION ONLY; tampered final report refused (probe t8)"},
+    {"item": "run-row deletion/mutation detection", "verdict": "PASS", "evidence": "probe t7: 'dispatch journal has no run row', 'stage/role/input differs', verify_evidence NON_COMPLIANT"},
+    {"item": "12-role Soul hashes + matrix contract", "verdict": "PASS", "evidence": "snapshot soul_hashes.json/matrix.json bound; audit_role rejects soul/commit/contract mismatch (probe t7)"},
+    {"item": "source integrity after all test runs", "verdict": "PASS", "evidence": "67/67 manifest blobs recomputed post-tests, 0 mismatches"}
+  ],
+  "not_verified": [
+    "21bao production NTFS ACL provisioning, dedicated service account, and process-identity separation for the task ledger",
+    "Windows descendant-process-tree termination (Job Object) beyond direct child kill",
+    "real Codex/OpenCode harness execution and provider/model provenance",
+    "real test-execution receipts",
+    "human identity of Gate 0.1/0.2/5.9 approvals",
+    "P0 protocol and physical identity attestation",
+    "remote A2A three-node blind review (external component)",
+    "Windows E: production worktree and kill guard"
+  ],
+  "release_gate": "P1 must NOT be declared runnable on 21bao from this audit: integration mode remains fail-closed by design and the OS trust premise is unenforced and unverified in the real environment."
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 5,
+  "audit_round": "round-005",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "3be86f69b87d7f69c0f739d31615c5e0feda751b",
+  "audited_commit_parent": "715664e02cf25c31f15bad998174a7e91c130425",
+  "audited_tree_sha": "b7eec8470fe2b14b0969fc012a2f566e2180c266",
+  "previous_audit_report_commit": "715664e02cf25c31f15bad998174a7e91c130425",
+  "audited_directory": "experiments/hermes-coding-pipeline-p1/",
+  "files_in_scope": 67,
+  "source_integrity": {
+    "method": "Git blob SHA-1 (hash-object) recomputed from snapshot before and after all test runs, per manifest.json",
+    "checked": 67,
+    "mismatches": 0
+  },
+  "environment": {
+    "host": "21bao (Windows 10, kk-pc-server)",
+    "python": "3.11.15",
+    "workspace": "C:/Users/KK/AppData/Local/hermes/profiles/ling/cache/scratch/p1-round005-audit-20261104",
+    "mode": "offline only: pytest fixtures + local stub subprocesses + disposable NTFS scratch dirs",
+    "network": "no outbound calls to models or peers during tests",
+    "isolation": "product snapshot executed verbatim; all adversarial probes in separate probe-copy; icacls applied only to auditor-created acl-probe directory"
+  },
+  "tests": {
+    "project_suite": {"collected": 101, "executed": 101, "passed": 97, "failed": 1, "errors": 0, "skipped": 3,
+      "developer_claim": "101 passed",
+      "discrepancy": "Windows: 1 fixture defect failure (tab filename, R5-003) + 3 POSIX-only skips of the R4-001 regressions (R5-004)"},
+    "independent_probes": {"cases": 46, "batches": 9, "exit_zero_all": true, "failures": 0},
+    "windows_acl_forensics": {"cases": 4, "accepted": 1, "rejected": 3, "artifact": "testlogs/acl_evidence.json"}
+  },
+  "findings_status": {
+    "R4-001": "MITIGATED_FAIL_CLOSED",
+    "R4-002": "FIXED",
+    "R4-003": "FIXED",
+    "R2-006": "MITIGATED_FAIL_CLOSED",
+    "R2-008": "FIXED (offline-verifiable scope; Windows descendant-process-tree termination NOT_VERIFIED)",
+    "new": {"R5-001": "P3", "R5-002": "P3", "R5-003": "P3", "R5-004": "P2", "R5-005": "P2"},
+    "regressions": 0
+  },
+  "explicitly_not_done": [
+    "no real Codex/OpenCode harness invocation",
+    "no paid model calls",
+    "no connection to 5bao, 9bao, rustyhand or any remote A2A node",
+    "no modification of Hermes live config, Souls, audited source, product tests, or prior audit reports",
+    "no deployment or production run of P1 on 21bao"
+  ],
+  "not_verified": [
+    "21bao production NTFS ACL provisioning, dedicated service account and process-identity separation for the task ledger",
+    "Windows descendant-process-tree (Job Object) termination beyond direct child kill",
+    "real harness/provider/model provenance receipts",
+    "real test-execution receipts",
+    "human identity binding of Gate 0.1/0.2/5.9 approvals",
+    "P0 protocol and physical identity attestation",
+    "remote three-node A2A blind review",
+    "Windows E: production worktree and kill guard"
+  ],
+  "release_statement": "This audit does NOT authorize running P1 in real mode on 21bao. Integration remains fail-closed by design (TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False), the OS trust premise is documented but unenforced (R5-005), and no real-environment provisioning has been verified.",
+  "report_files": ["AUDIT_REPORT.md", "FINDINGS.json", "TEST_RESULTS.txt", "SCOPE.json"],
+  "generated_at": "2026-11-04T19:47:06+08:00"
+}
