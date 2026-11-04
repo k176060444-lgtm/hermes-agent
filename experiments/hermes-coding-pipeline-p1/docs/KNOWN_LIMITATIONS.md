@@ -54,3 +54,18 @@ Boolean were toggled. The task ledger's hash chain does not prove that the
 trusted OS account itself was uncompromised. WAL/SHM paths and run capture
 metadata have additional local checks. External P0 transport receipts and
 real agent/test/approval provenance remain unavailable.
+
+### Round-006 audit / Round-007 candidate
+
+The Round-006 Qwen-Flash report (`6d301638043f61c68e3f76aeafa94b01b30229ba`)
+confirmed the Windows **R6-001 WAL lifecycle** gap: a child file created
+under a protected NTFS root normally inherits only that root's owner-only ACEs.
+Requiring every child to report `AreAccessRulesProtected=True` makes normal
+SQLite WAL destruction/recreation impossible. The Round-007 candidate checks
+protected inheritance on the **root only** and evaluates effective allowed
+principals plus owner independently on all enumerated children. Real Windows
+recreation still needs independent testing. R6-002 (deep enumeration of
+individual evidence-file ACLs) remains informational and is not silently
+claimed fixed. Neither change solves the same-SID actor problem: R5-005 stays
+`MITIGATED_FAIL_CLOSED`, real Agent execution is forbidden, and R2-006
+trusted external A2A receipts remain pending.

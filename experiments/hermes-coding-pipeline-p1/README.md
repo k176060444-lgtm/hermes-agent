@@ -1,6 +1,6 @@
 # Hermes Coding Pipeline P1 — candidate implementation
 
-**Status: Round-003 FAIL remediation candidate for independent Round-004 audit; offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
+**Status: Round-006 audit remediation candidate for independent Round-007 audit; offline tests only. Strict real integration hard-blocked; not approved for 21bao use, live calls or deployment.**
 
 P1 receives two outputs from Hermes Gate 0.1: (1) approved user intent and goals, and (2) approved 12-role Harness/model/node matrix. It programmatically controls Phase 0.2 through Gate 5.9. Hermes remains the human-facing Orchestrator; P1 is its deterministic execution kernel. P2 intent/matrix conversation automation and Phase 6/7 deployment/cleanup are explicitly excluded.
 
@@ -109,3 +109,14 @@ as offline/Windows-test candidates and independently blocks ordinary
 same-identity Agent subprocess invocation (R5-005 remains `MITIGATED_FAIL_CLOSED`,
 **not FIXED**). See `docs/ROUND_005_REMEDIATION.md` and
 `prompts/ROUND006_AUDIT_PROMPT.md`. Real 21bao coding tasks stay disabled.
+
+### Current Round-007 candidate (not a live release)
+
+Round-006 Qwen-Flash independent audit was `CONDITIONAL`; R6-001 demonstrates
+that requiring `AreAccessRulesProtected=True` on SQLite-created WAL children
+prevents real Windows WAL recreation. This candidate checks a protected task
+root, but permits safe inherited child ACEs while still rejecting additional
+principals and wrong ownership. See `docs/ROUND_006_REMEDIATION.md` and
+`prompts/ROUND007_AUDIT_PROMPT.md`. A real Windows lifecycle audit is required.
+R6-002 file-level DACL deep enumeration remains an informational P3 finding.
+R5-005 and R2-006 remain `MITIGATED_FAIL_CLOSED`; the real mode is disabled.

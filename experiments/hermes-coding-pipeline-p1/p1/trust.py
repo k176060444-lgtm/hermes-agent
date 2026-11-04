@@ -63,9 +63,18 @@ def _windows_validate(paths: list[Path]) -> None:
         data = json.loads(result.stdout)
         if not isinstance(data, list) or len(data) != len(paths):
             raise ValueError('unexpected ACL result cardinality')
-        for rec in data:
-            if not rec.get('acl_protected'):
-                raise TrustBoundaryError('NTFS ACL inherits permissions: ' + rec.get('path', '?'))
+        for index, rec in enumerate(data):
+            if not isinstance(rec, dict) or rec.get('path') != str(paths[index]):
+                raise ValueError('ACL response does not match requested path')
+            # R6-001: The ledger root is a protected NTFS trust boundary.
+            # SQLite naturally creates state.sqlite/-wal/-shm with inherited
+            # *owner-only* ACEs. WAL files may disappear/reappear on every
+            # connection lifecycle; requiring each child to disable inheritance
+            # makes an otherwise securely provisioned Windows task unusable.
+            # Enforce a protected root and inspect EFFECTIVE allowed principals
+            # and owner on every existing ledger/evidence child instead.
+            if index == 0 and not rec.get('acl_protected'):
+                raise TrustBoundaryError('NTFS task root inherits permissions: ' + str(paths[index]))
             if rec.get('owner') != rec.get('me'):
                 raise TrustBoundaryError('NTFS task state not owned by current identity')
             if rec.get('unexpected'):
@@ -89,6 +98,12 @@ def _posix_validate(paths: list[Path]) -> None:
 
 def validate_private_task_home(home: Path, *, require_database: bool) -> None:
     """Fail closed unless the task state belongs to one trusted OS identity.
+
+    On Windows, the home directory itself must have inheritance disabled.
+    Its existing children are allowed to inherit *only safe principals* from
+    that protected root; otherwise SQLite WAL recreation cannot work. Every
+    enumerated child still requires the current owner and a safe effective
+    Allow ACL. Inherited access to another principal remains a blocker.
 
     Caller must provision a dedicated process identity and prevent Agent
     subprocesses from reading/writing this directory. The check alone cannot
