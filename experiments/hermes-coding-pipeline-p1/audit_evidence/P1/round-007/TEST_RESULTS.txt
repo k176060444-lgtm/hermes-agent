@@ -1,0 +1,79 @@
+Hermes Coding Pipeline P1 - Round-007 independent audit test log
+Audited commit: cda5f4873c253d5926c86d84b7ada138427b9bc7 (tree 3b3dee4967a59d21ddd428389d939aa2bf8fe76e)
+Host: 21bao Windows 10, Python 3.11.15, git 2.54.0, PowerShell 5.1; offline fixtures, local stubs, disposable NTFS scratch only
+Generated: 2026-11-04T21:05:34+08:00
+
+== 0. Source integrity ==
+files=81 mismatches=0 (identical pre/post all executions)
+
+== 1. Project suite verbatim on the audited snapshot (15 batches, 114 tests) ==
+cmd: python -B run_tests.py collect | batch0..batch14
+batch0  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 24.82s
+batch1  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.63s
+batch2  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 17.99s
+batch3  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 20.17s
+batch4  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 9.10s
+batch5  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 11.51s
+batch6  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 16.52s
+batch7  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 8.79s
+batch8  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.46s
+batch9  exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 0.08s
+batch10 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 8.04s
+batch11 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 23.48s
+batch12 exit=0 tests=8 failures=0 errors=0 skipped=4  4 passed, 4 skipped in 4.08s
+batch13 exit=0 tests=8 failures=0 errors=0 skipped=0  8 passed in 5.48s
+batch14 exit=0 tests=2 failures=0 errors=0 skipped=0  2 passed in 1.33s
+TOTAL collected=114 passed=110 failed=0 errors=0 skipped=4
+Skips: test_r4_002_posix_tab_filename (skipif nt, correct per R5-003) + 3 POSIX-mode-only R4-001 tests
+Windows WAL lifecycle designated test detail:
+  PASS test_r6_001_protected_home_allows_safe_inherited_sqlite_children  time=0.002s
+  PASS test_r6_001_unprotected_home_still_blocks  time=0.002s
+  PASS test_r6_001_inherited_children_still_require_safe_effective_acl[unexpected_principal]  time=0.002s
+  PASS test_r6_001_inherited_children_still_require_safe_effective_acl[wrong_owner]  time=0.002s
+  PASS test_r6_001_inherited_children_still_require_safe_effective_acl[misordered_response]  time=0.004s
+  PASS test_r6_001_real_windows_sqlite_wal_recreation_under_protected_root  time=1.281s
+Developer claim was Linux 112 passed/2 skipped; NOT reused as Windows proof.
+
+== 2. Independent probes: 8 batches, 63 cases, ALL exit 0 ==
+r7         exit=0 tests=12 failures=0 errors=0 skipped=0 duration=9.734s
+           [auditor REAL-NTFS SQLite WAL lifecycle reproduction + adversarial extensions + malformed-response fail-closed + R6-002 scope case (12)]
+r6b_trust  exit=0 tests=5 failures=0 errors=0 skipped=0 duration=4.609s
+           [five trust entry points + live query-only ACL spy + surface enumeration + offline exemption (5)]
+r6a        exit=0 tests=5 failures=0 errors=0 skipped=0 duration=13.109s
+           [capture-binding regressions: forged timed_out receipt, synchronized swap, RUNNING-vs-COMPLETED, directory ACE rejection, in-directory scope (5)]
+r6b_paths  exit=0 tests=19 failures=0 errors=0 skipped=0 duration=8.782s
+           [unicode/space/#/()/quote battery + negatives + unicode exam e2e + tab behaviour (19)]
+r6b_orphan exit=0 tests=3 failures=0 errors=0 skipped=0 duration=5.172s
+           [unfinished-run reconciliation (3)]
+r6b_caps   exit=0 tests=7 failures=0 errors=0 skipped=0 duration=3.0s
+           [per-stream caps, dual-pipe, invalid limits, timeout partial (7)]
+r6b_gate   exit=0 tests=3 failures=0 errors=0 skipped=0 duration=5.547s
+           [separate-identity gate vs legacy flag; capture bound; offline append boundary (3)]
+r6b_reg    exit=0 tests=9 failures=0 errors=0 skipped=0 duration=24.234s
+           [parallel same-commit, conftest, run-row binding, gate02 tamper, pro-audit scope, a2a, budgets, no-op, export tamper (9)]
+PROBE TOTAL cases=63 failures=0 errors=0 skipped=0; every batch exit 0
+
+Key R6-001 reproduction evidence (verbatim probe stdout):
+  natural WAL ACE line: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round007-audit-20261104\probe-r7\test_positive_r6001_independen0\r7-ledger\s
+  lifecycle across close/reopen: ACCEPTED throughout
+  .wal: Everyone/AuthenticatedUsers ACE on child -> REJECTED (no relaxation)
+  .logs child directory with own Everyone ACE -> REJECTED
+  .root ACL reset to inherited -> REJECTED at root (first record)
+  .Administrators ACE on WAL -> ACCEPTED (documented allowlist; TCB assumption)
+  .symlinked WAL -> REJECTED before any ACL query
+  .real owner mismatch -> REJECTED
+  .short: malformed ACL response -> fail-closed
+  .Everyone ACE inside logs/1.stdout.bin -> still ACCEPTED (R6-002 documented scope)
+
+Trust entry-point regression (r6b_trust): os=nt status=BLOCKED preflight=FAILED run=BLOCKED evidence=NON_COMPLIANT dispatched=0 events=1->1 persisted=READY msg=NOT_VERIFIED: task state OS trust boundary invalid: NTFS task root inherits permissions: C:\Users\KK\AppData\Local\hermes\profiles\ling\cache\scratch\p1-round00
+Surface enumeration (r6b_trust): .os=nt inspected=['.', 'snapshots', 'state.sqlite', 'state.sqlite-shm', 'state.sqlite-wal'] parent_inspected=False
+Separate-identity gate (r6b_gate): .legacy flag + adapter boolean isolated=true: no same-identity runner, zero side effects
+
+== 3. Fixture corrections (auditor-side, disclosed; product untouched) ==
+- r7 first attempt failed 2 auditor cases: sqlite3 'with' does not close the connection (WAL handle locked, WinError 32)
+  and rc1 fail-closed message expected as wrapper text but raised as 'Windows NTFS ACL inspection failed'.
+- corrected cases re-run: 12/12 PASS; final evidence above.
+
+== 4. Boundaries honored ==
+No paid model calls; no 5bao/9bao/rustyhand/P0; no live config edits; Set-Acl/icacls only on auditor-created
+disposable directories (removed after); audited source, Souls and prior reports byte-identical post-run.

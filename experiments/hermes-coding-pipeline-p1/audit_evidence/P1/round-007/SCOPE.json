@@ -1,0 +1,83 @@
+{
+  "schema_version": 7,
+  "audit_round": "round-007",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "auditor_role": "independent code-audit agent (round-007); no remediation performed",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "cda5f4873c253d5926c86d84b7ada138427b9bc7",
+  "audited_commit_parent": "6d301638043f61c68e3f76aeafa94b01b30229ba",
+  "audited_tree_sha": "3b3dee4967a59d21ddd428389d939aa2bf8fe76e",
+  "previous_audit_report_commit": "6d301638043f61c68e3f76aeafa94b01b30229ba",
+  "audited_directory": "experiments/hermes-coding-pipeline-p1/",
+  "files_in_scope": 81,
+  "source_integrity": {
+    "method": "Git blob SHA-1 vs manifest before and after all test executions",
+    "checked": 81,
+    "mismatches": 0
+  },
+  "environment": {
+    "host": "21bao (Windows 10, kk-pc-server)",
+    "python": "3.11.15",
+    "git": "2.54.0.windows.1",
+    "powershell": "5.1; ACL queries read-only; Set-Acl/icacls ONLY on auditor-created disposable scratch dirs, deleted afterwards",
+    "mode": "offline only: pytest fixtures, local stub subprocesses, real SQLite/NTFS lifecycle in temp dirs",
+    "workspace": "C:\\Users\\KK\\AppData\\Local\\hermes\\profiles\\ling\\cache\\scratch\\p1-round007-audit-20261104"
+  },
+  "tests": {
+    "project_suite": {
+      "collected": 114,
+      "executed": 114,
+      "passed": 110,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 4,
+      "skips_all_legitimate": true,
+      "windows_wal_lifecycle_designated_test": "EXECUTED + PASSED on Windows (time=1.281s, not skipped)"
+    },
+    "independent_probes": {
+      "cases": 63,
+      "batches": 8,
+      "failures": 0,
+      "all_exit_zero": true
+    }
+  },
+  "findings_status": {
+    "R6-001": "FIXED (auditor real-Windows lifecycle reproduction + designated dev test)",
+    "R6-002": "MITIGATED_FAIL_CLOSED - documented scope observation, developer NOT_FIXED/optional, kept informational P3",
+    "R5-005": "MITIGATED_FAIL_CLOSED",
+    "R4-001": "MITIGATED_FAIL_CLOSED",
+    "R2-006": "MITIGATED_FAIL_CLOSED",
+    "new": {
+      "R7-001": "P3 informational"
+    },
+    "regressions": 0
+  },
+  "no_relaxation_check": "allow-list {me, S-1-5-18, S-1-5-32-544} unchanged vs Round-005/006; Everyone/AuthenticatedUsers/wrong-owner/root-inheritance/symlink all still rejected on real NTFS",
+  "explicitly_not_done": [
+    "no real Codex/OpenCode/paid model calls",
+    "no 5bao/9bao/rustyhand/P0/A2A node usage",
+    "no modification of audited source/tests/Souls/Hermes live config/prior reports",
+    "no deployment or production run of P1"
+  ],
+  "not_verified": [
+    "separate-identity runner + SID attestation (R5-005)",
+    "21bao production dedicated-account/ACL provisioning",
+    "Windows descendant-process-tree termination",
+    "real harness/model/test receipts",
+    "human approval identity chain (Gate 0.1/0.2/5.9)",
+    "P0 protocol/physical identity + remote three-node A2A",
+    "E: worktree + production kill guard",
+    "capture binding via a real invocation (impossible while gate closed)"
+  ],
+  "real_integration_allowed": false,
+  "release_statement": "R6-001 deployability blocker fixed on real Windows; P1 still must NOT run real coding tasks on 21bao - integration doubly fail-closed and identity/provenance items NOT_VERIFIED.",
+  "report_files": [
+    "AUDIT_REPORT.md",
+    "FINDINGS.json",
+    "TEST_RESULTS.txt",
+    "SCOPE.json"
+  ],
+  "generated_at": "2026-11-04T21:05:34+08:00"
+}

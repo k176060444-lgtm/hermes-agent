@@ -1,0 +1,107 @@
+{
+  "schema_version": 7,
+  "audit_round": "round-007",
+  "repo": "k176060444-lgtm/hermes-agent",
+  "branch": "feature/p1-coding-pipeline-20261104",
+  "audited_commit_sha": "cda5f4873c253d5926c86d84b7ada138427b9bc7",
+  "audited_commit_parent": "6d301638043f61c68e3f76aeafa94b01b30229ba",
+  "audited_tree_sha": "3b3dee4967a59d21ddd428389d939aa2bf8fe76e",
+  "previous_audit_report_commit": "6d301638043f61c68e3f76aeafa94b01b30229ba",
+  "audit_status": "COMPLETE",
+  "verdict": "CONDITIONAL",
+  "environment": "21bao Windows 10, offline; Python 3.11.15, git 2.54.0, PowerShell 5.1; no paid model, no 5bao/9bao/rustyhand, no live Hermes/A2A config change",
+  "summary": {
+    "project_tests_on_windows": {"collected": 114, "passed": 110, "failed": 0, "skipped": 4, "errors": 0,
+      "skips_legitimate": ["test_r4_002_posix_tab_filename (skipif nt per R5-003 fix)",
+                            "3x test_r4_001 POSIX-mode tests"]},
+    "designated_test": "tests/test_remediation_round6.py 6/6 EXECUTED on Windows (0 skipped), including test_r6_001_real_windows_sqlite_wal_recreation_under_protected_root (1.281s real NTFS+SQLite lifecycle)",
+    "independent_probes": {"cases": 63, "batches": 8, "all_exit_zero": true},
+    "auditor_wal_lifecycle_reproduction": "independent 12-case r7 suite on real NTFS (see findings R6-001 evidence); developer Linux numbers NOT reused as Windows proof",
+    "source_integrity": {"files_checked": 81, "blob_mismatches": 0, "checked_before_and_after_tests": true}
+  },
+  "round6_target_findings": [
+    {
+      "id": "R6-001",
+      "severity": "P2",
+      "claim": "trust.py 要求每个被检对象禁继承，SQLite 自然创建/重建的 WAL/SHM 永久被拒，真实 Windows 生命周期不可运行",
+      "status": "FIXED",
+      "evidence": [
+        "implementation: p1/trust.py:66-81 - only record index 0 (task root, fixed by validate_private_task_home:113) must report AreAccessRulesProtected=True; EVERY object still requires owner==current SID and effective Allow principals (inherited ACEs expanded via GetAccessRules($true,$true)) subset of {current SID, S-1-5-18, S-1-5-32-544}; per-record path equality check (trust.py:67-68) blocks misordered/mixed responses; all PS failures/JSON errors/timeout remain fail-closed",
+        "auditor real-NTFS reproduction (r7 suite, disposable pytest tmp dirs only): root-only protection + natural SQLite WAL creation -> validate ACCEPTED (children verified to carry inherited owner-only ACEs, icacls '(I)(F)' recorded)",
+        "clean close -> reopen -> write -> re-validate: ACCEPTED throughout (both wal-survives and wal-recreated branches exercised)",
+        "unexpected principals still blocked: Everyone Read on -wal REJECTED; Everyone on -shm REJECTED; AuthenticatedUsers (S-1-5-11) on -wal REJECTED; extra Everyone ACE on logs child DIRECTORY REJECTED",
+        "root weakened: icacls /reset on root -> REJECTED 'NTFS task root inherits permissions' (root gate intact)",
+        "owner tampering: SetOwner of state.sqlite to another SID -> REJECTED 'not owned by current identity'",
+        "reparse handling: -wal replaced by symlink -> REJECTED 'private task state path missing or linked' before ACL query",
+        "query-response hardening: short list / swapped order / garbage stdout / nonzero rc all fail closed",
+        "no relaxation check: allow-list {me, S-1-5-18, S-1-5-32-544} unchanged from Round-005 (trust.py:27); Administrators/SYSTEM acceptance is the previously documented TCB assumption (README:111-118, KNOWN_LIMITATIONS:56-71), disclosed not concealed",
+        "developer designated test test_r6_001_real_windows_sqlite_wal_recreation_under_protected_root EXECUTED and PASSED on 21bao Windows (batch13, time=1.281s, not skipped)",
+        "ACL helper script remains query-only (re-verified via Round-006 live spy probe r6b_trust: powershell.exe -EncodedCommand, only Get-Acl/GetAccessRules verbs)"
+      ],
+      "assessment": "Round-006 blocker reproduced-then-resolved on the real deployment OS. Trust surface now satisfiable under SQLite lifecycle while still rejecting every unauthorized principal tested."
+    },
+    {
+      "id": "R6-002",
+      "severity": "P3",
+      "claim": "证据目录内部单个文件的独立 DACL 未逐个枚举",
+      "status": "MITIGATED_FAIL_CLOSED",
+      "status_note": "documented, developer explicitly NOT_FIXED/optional; retained as informational scope observation - neither escalated nor concealed",
+      "evidence": [
+        "auditor re-reproduced: Everyone ReadAndExecute ACE on logs/1.stdout.bin inside a protected tree -> validate ACCEPTED (only enumerated objects checked)",
+        "compensating controls verified this round: parent logs directory itself is enumerated and ACE-checked (auditor WAL/probe cases), non-TCB principals cannot traverse into or re-write DACLs of children under the private protected root, and evidence CONTENT integrity is hash-bound via run details/events (Round-006 R5-002 capture binding re-verified green in r6a)"
+      ],
+      "assessment": "impact unchanged from Round-006; informational P3, non-blocking; revisit if threat model widens (developer agrees, docs/ROUND_006_REMEDIATION.md:13)."
+    }
+  ],
+  "carried_known_items": [
+    {"id": "R5-005", "severity": "P2", "status": "MITIGATED_FAIL_CLOSED",
+     "evidence": "executor.py:129 unconditional gate re-verified (r6b_gate): legacy flag force-enabled + fully valid adapter incl adapter boolean isolated:true -> InvocationError 'separate-identity Agent runner', zero side-effect files; no SID-attested runner exists; offline Store._event forgery still possible in non-evidentiary fixture mode"},
+    {"id": "R4-001", "severity": "P1", "status": "MITIGATED_FAIL_CLOSED",
+     "evidence": "entry-point enforcement re-verified (r6b_trust: BLOCKED/FAILED preflight, dispatched=0, events 1->1, persisted READY preserved); deployability sub-issue now fixed via R6-001; real 21bao dedicated-account provisioning remains NOT_VERIFIED"},
+    {"id": "R2-006", "severity": "P1", "status": "MITIGATED_FAIL_CLOSED",
+     "evidence": "direct integration call_adapter -> ContractError NOT_VERIFIED (r6b_reg); no remote nodes contacted; no P0 receipts"}
+  ],
+  "new_findings": [
+    {
+      "id": "R7-001",
+      "severity": "P3",
+      "category": "informational_implementation_coupling",
+      "title": "根目录检查依赖 paths[0] 位置语义",
+      "files": ["p1/trust.py:76", "p1/trust.py:113", "p1/trust.py:67"],
+      "evidence": "the protected-root rule triggers only when index==0; production callers always pass home first (validate_private_task_home builds paths=[home,...]) and the per-record path equality check (trust.py:67) would catch reordered responses, so no current exploit exists; a future caller invoking _windows_validate directly with a different first path would silently receive child-level strictness for the root",
+      "impact": "none reachable today; maintainability note",
+      "reproduction": "code reading + malformed-response probes (r7 group)",
+      "minimal_fix": "pass the root explicitly (e.g. validate_private_task_home marks paths[0] as is_root) rather than relying on index"
+    }
+  ],
+  "regression_checks": [
+    {"item": "Phase 3/4 parallel reviewers, same reviewed_commit, independent compliance records", "verdict": "PASS", "evidence": "r6b_reg barrier: seen=[quality_reviewer, spec_reviewer], one sha, both audits, WAITING_GATE_5_9"},
+    {"item": "Gate 0.2 approval binding / row-tamper refusal", "verdict": "PASS", "evidence": "r6b_reg: BLOCKED, zero new dispatch, forensic row untouched"},
+    {"item": "Gate A/B tester exam immutability incl conftest", "verdict": "PASS", "evidence": "r6b_paths unicode exam protected; r6b_reg conftest end-to-end blocked; 8 negative classes rejected"},
+    {"item": "Gate 5.9 evidence completeness (capture binding, forged receipts, RUNNING vs COMPLETED)", "verdict": "PASS", "evidence": "r6a 5/5: forged timed_out receipt refused; synchronized stdout swap caught by journal; RUNNING -> NEEDS_RECONCILIATION never COMPLIANT"},
+    {"item": "5/5/2 loop budgets", "verdict": "PASS", "evidence": "r6b_reg round_a 2->5 across process, FAILED, exit 10; fake no-op rejected"},
+    {"item": "Pro-Audit process-only scope", "verdict": "PASS", "evidence": "r6b_reg: low-quality APPROVE COMPLIANT, wrong commit NON_COMPLIANT"},
+    {"item": "event-ledger integrity (run delete/mutate/duplicate detection)", "verdict": "PASS", "evidence": "r6b_reg binding messages verbatim"},
+    {"item": "real integration fail-closed; no Harness/P0 invocation", "verdict": "PASS", "evidence": "r6b_gate + r6b_reg refusals; audit itself used offline fixtures + local stubs only"},
+    {"item": "bounded stream capture (R2-008 fixed behavior)", "verdict": "PASS", "evidence": "r6b_caps 7/7"},
+    {"item": "five trust entry points", "verdict": "PASS", "evidence": "r6b_trust 5/5"},
+    {"item": "source integrity after all executions", "verdict": "PASS", "evidence": "81/81 manifest blobs recomputed post-tests, 0 mismatches"}
+  ],
+  "fixture_disclosures": [
+    "two auditor-side probe defects corrected before final evidence (sqlite3 'with' does not close connections leaving the WAL handle locked; rc1 message text differs from wrapper text); corrected r7 batch re-run to 12/12 green - product code was never modified"
+  ],
+  "not_verified": [
+    "separate-identity runner service, token-SID attestation, and proof an Agent process cannot access the ledger (R5-005/R4-001)",
+    "actual 21bao production provisioning: dedicated service account, protected task-home deployment, long-lived daemon identity split",
+    "Windows descendant-process-tree (Job Object) termination beyond direct child kill",
+    "real harness/provider/model provenance and test-execution receipts",
+    "human identity binding of Gate 0.1/0.2/5.9 approvals",
+    "P0 protocol and physical identity attestation; remote three-node A2A blind review",
+    "Windows E: production worktree and kill guard",
+    "capture-binding end-to-end via a REAL invocation (still impossible until the Stage-2 runner exists; synthetic registration path verified only)"
+  ],
+  "release_statement": "Round-007 CONDITIONAL: R6-001 deployability blocker is fixed and double-verified on the real Windows OS, regressions clean, suite green on Windows (110/0/4). This still does NOT authorize real P1 execution on 21bao: integration remains doubly fail-closed (TRUSTED_INTEGRATION_EXECUTION_VERIFIED=False and the unconditional separate-identity gate), and R5-005/R2-006 plus all provenance/identity items are NOT_VERIFIED.",
+  "real_integration_allowed": false,
+  "report_files": ["AUDIT_REPORT.md", "FINDINGS.json", "TEST_RESULTS.txt", "SCOPE.json"],
+  "generated_at": "2026-11-04T21:05:34+08:00"
+}
