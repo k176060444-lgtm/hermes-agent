@@ -7,7 +7,7 @@ not deploy, do not enable real coding execution.
 * Repo: k176060444-lgtm/hermes-agent
 * Branch: fix/p1-stage2b1-remediation2
 * Directory: experiments/hermes-coding-pipeline-p1/
-* Round-2 remediation commit: <FILL after commit>
+* Round-2 remediation commit: fecafeb0d7888ee471a292b835b21cb2c13efbea
 * Its parent (re-audit report commit): c36577b763318822fc251680012e83b6ff6d62d2
 * Round-1 remediation commit: c08e0f9738643edce0d49e39f465ff10cb8aaee4
 * Do NOT audit a moving branch HEAD; pin the exact commit, verify the tree
