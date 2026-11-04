@@ -1,0 +1,9 @@
+{
+  "gate": "0.1",
+  "approved": false,
+  "approved_by": "",
+  "approved_at": "",
+  "approval_id": "",
+  "intent_sha256": "<SHA256 of approved intent.md>",
+  "matrix_sha256": "<SHA256 of approved matrix.json>"
+}

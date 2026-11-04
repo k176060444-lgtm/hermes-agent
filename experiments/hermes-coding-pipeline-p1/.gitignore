@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.p1-state/
+*.log
+# audit_evidence must remain versioned for reports; do not ignore it.

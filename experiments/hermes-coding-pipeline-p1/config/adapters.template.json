@@ -1,0 +1,45 @@
+{
+  "harnesses": {
+    "codex": {
+      "argv": [
+        "C:/ABSOLUTE/PATH/TO/codex-wrapper.exe",
+        "--role",
+        "{role}",
+        "--soul",
+        "{soul}",
+        "--model",
+        "{model}",
+        "--stage",
+        "{phase}",
+        "--worktree",
+        "{worktree}"
+      ],
+      "explicitly_authorized": false,
+      "timeout_seconds": 900
+    },
+    "opencode": {
+      "argv": [
+        "C:/ABSOLUTE/PATH/TO/opencode-wrapper.exe",
+        "--role",
+        "{role}",
+        "--soul",
+        "{soul}",
+        "--model",
+        "{model}",
+        "--stage",
+        "{phase}",
+        "--worktree",
+        "{worktree}"
+      ],
+      "explicitly_authorized": false,
+      "timeout_seconds": 900
+    }
+  },
+  "a2a": {
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/p0-adapter.exe"
+    ],
+    "explicitly_authorized": false,
+    "timeout_seconds": 120
+  }
+}

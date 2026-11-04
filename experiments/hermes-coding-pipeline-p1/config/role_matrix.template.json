@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "nodes": {
+    "21bao": {
+      "platform": "windows",
+      "purpose": "primary_p1_execution"
+    },
+    "5bao": {
+      "platform": "debian",
+      "purpose": "blind_review"
+    },
+    "9bao": {
+      "platform": "debian",
+      "purpose": "blind_review"
+    },
+    "rusty": {
+      "platform": "debian",
+      "purpose": "blind_review"
+    }
+  },
+  "roles": {
+    "planner": {
+      "node": "21bao",
+      "harness": "codex",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "worker": {
+      "node": "21bao",
+      "harness": "opencode",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "workspace_write"
+    },
+    "spec_reviewer": {
+      "node": "21bao",
+      "harness": "opencode",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "quality_reviewer": {
+      "node": "21bao",
+      "harness": "codex",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "tester_gate_a": {
+      "node": "21bao",
+      "harness": "codex",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "test_files_only"
+    },
+    "blind_a": {
+      "node": "5bao",
+      "harness": "external_a2a",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "blind_b": {
+      "node": "9bao",
+      "harness": "external_a2a",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "blind_c": {
+      "node": "rusty",
+      "harness": "external_a2a",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "worker_remediation": {
+      "node": "21bao",
+      "harness": "opencode",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "workspace_write"
+    },
+    "tester_gate_b": {
+      "node": "21bao",
+      "harness": "opencode",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "test_files_only"
+    },
+    "arbitrator": {
+      "node": "21bao",
+      "harness": "codex",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    },
+    "pro_audit": {
+      "node": "21bao",
+      "harness": "opencode",
+      "primary_model": null,
+      "backup_model": null,
+      "permission": "read_only"
+    }
+  },
+  "blind_review": {
+    "provider": "external_p0_adapter",
+    "candidates": [
+      "5bao",
+      "9bao",
+      "rusty"
+    ],
+    "minimum_distinct_physical_nodes": 2,
+    "third_seat_grace_seconds": 600
+  }
+}
