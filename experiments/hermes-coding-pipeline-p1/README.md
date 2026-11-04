@@ -93,3 +93,11 @@ See [`docs/ROUND_001_REMEDIATION.md`](docs/ROUND_001_REMEDIATION.md) for the com
 ### Round-002 FAIL remediation candidate
 
 The latest changes respond to Round-002 audit report `541c25a` (which audited `7ef210a`). See `docs/ROUND_002_REMEDIATION.md` and `prompts/ROUND003_AUDIT_PROMPT.md` for the exact verification boundary. Approval file now must bind all 12 Role Soul hashes (`souls_sha256`). Real integration remains **NOT_VERIFIED and disabled**; successful offline fixtures cannot authorize 21bao live calls or production release.
+
+### Round-004 follow-up (Round-005 audit candidate)
+
+The state store uses SHA-linked journal events. Those hashes alone are **not** a
+provenance signature. New `p1/trust.py` enforces a real-mode private OS account
+ownership boundary for P1 state; this is explicitly a trust-domain policy, not
+protection against malicious code with the orchestrator's own OS identity.
+See `docs/ROUND_004_REMEDIATION.md`. Real model execution remains hard-disabled.

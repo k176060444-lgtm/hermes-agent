@@ -10,6 +10,7 @@ from .contracts import (ContractError, atomic_write, canonical, digest_file,
                         read_json, sha256, snapshot_inputs, safe_task_id,
                         PASS_REVIEW)
 from .state import Store, StateError, exclusive_lock
+from .trust import validate_private_task_home, TrustBoundaryError
 from .gitops import git, head, inventory, inventory_hash, create_worktree, clean, index_digest, test_path, test_commit_transition
 from .audit import audit_role
 from .executor import invoke
@@ -98,7 +99,8 @@ def initialize(home:Path, task_id:str, intent:Path, matrix:Path, approval:Path, 
               "final_arbitration_report":None,"arbitration_case_sha256":None,
               "protected_tests":{},"phase_input_commits":{},**snapshots}
         store=Store(home/"state.sqlite")
-        try:store.create(task)
+        try:
+            store.create(task)
         finally:store.close()
         return task
     except Exception:
@@ -121,6 +123,20 @@ class Pipeline:
 
     def close(self):self.store.close()
 
+    def _trust_errors(self, task: dict) -> list[str]:
+        if task.get("mode") != "integration":
+            return []  # Offline fixtures are demonstrably not trusted evidence.
+        try:
+            validate_private_task_home(self.root, require_database=True)
+        except (TrustBoundaryError, OSError) as exc:
+            return ["NOT_VERIFIED: task state OS trust boundary invalid: " + str(exc)]
+        return []
+
+    def _require_trust(self, task: dict) -> None:
+        problems = self._trust_errors(task)
+        if problems:
+            raise PipelineError("; ".join(problems))
+
     def status(self)->dict:
         """Read-only effective status, never re-sealing suspicious task state.
 
@@ -130,13 +146,21 @@ class Pipeline:
         """
         task=self.store.load(self.task_id)
         result={key:task.get(key) for key in ("task_id","mode","stage","status","round_a","round_b","compliance_retraces","commit_sha","spec_sha256","a2a_job_id","last_error")}
-        issues=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+        issues=self._trust_errors(task)+self.store.audit_events(self.task_id)+self._gate02_errors(task)
         if issues:
             result["persisted_status"]=result["status"]
             result["status"]="BLOCKED"
             result["integrity_preflight"]="FAILED"
             result["integrity_errors"]=issues
             result["last_error"]="read-only preflight integrity failure: "+"; ".join(issues)
+        else:
+            unfinished=self.store.running(self.task_id)
+            if unfinished:
+                result["persisted_status"]=result["status"]
+                result["status"]="NEEDS_RECONCILIATION"
+                result["integrity_preflight"]="UNFINISHED_RUN"
+                result["unfinished_run_ids"]=[row["id"] for row in unfinished]
+                result["last_error"]="unfinished invocation requires external reconciliation"
         return result
 
     def _save(self,task:dict,event:str,detail:dict|None=None):
@@ -468,7 +492,7 @@ class Pipeline:
 
     def verify_evidence(self)->dict:
         task=self.store.load(self.task_id)
-        problems=self.store.audit_events(self.task_id)
+        problems=self._trust_errors(task)+self.store.audit_events(self.task_id)
         problems.extend(self._gate02_errors(task))
         try:
             require_snapshot(task,self.root)
@@ -602,7 +626,7 @@ class Pipeline:
     def approve_spec(self,actor:str,approval_id:str,expected_sha:str):
         with exclusive_lock(self.root/".task.lock"):
             task=self.store.load(self.task_id)
-            integrity=self.store.audit_events(self.task_id)
+            integrity=self._trust_errors(task)+self.store.audit_events(self.task_id)
             if integrity:
                 raise PipelineError("approval journal integrity failure: "+"; ".join(integrity))
             require_snapshot(task,self.root)
@@ -620,13 +644,17 @@ class Pipeline:
     def run(self,max_steps:int=40)->dict:
         with exclusive_lock(self.root/".task.lock"):
             task=self.store.load(self.task_id)
-            integrity=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+            integrity=self._trust_errors(task)+self.store.audit_events(self.task_id)+self._gate02_errors(task)
             if integrity:
                 # Never rewrite a tampered task row: preserve forensic journal.
                 result=self.status()
                 result["status"]="BLOCKED"
                 result["last_error"]="pre-dispatch integrity failure: "+"; ".join(integrity)
                 return result
+            if self.store.running(self.task_id):
+                # Do not re-seal an ambiguous, uncompleted invocation. A
+                # historical Gate 5.9 may not hide an in-flight run either.
+                return self.status()
             if task["mode"]=="integration":
                 # Contract for real signed provider, test and A2A evidence is not
                 # available in P1 v0.2: no real agent calls or apparent green gates.
@@ -641,7 +669,7 @@ class Pipeline:
                     break
                 if self.store.running(self.task_id):
                     self._block(task,"ambiguous RUNNING invocation; reconcile externally before resume", "NEEDS_RECONCILIATION");break
-                integrity=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+                integrity=self._trust_errors(task)+self.store.audit_events(self.task_id)+self._gate02_errors(task)
                 if integrity:
                     # A phase that finds a broken chain must not rewrite the row.
                     result=self.status()
@@ -681,9 +709,11 @@ class Pipeline:
         with exclusive_lock(self.root/".task.lock"):
             task=self.store.load(self.task_id)
             # Do not seal an untrusted task row with a new valid journal event.
-            problems=self.store.audit_events(self.task_id)+self._gate02_errors(task)
+            problems=self._trust_errors(task)+self.store.audit_events(self.task_id)+self._gate02_errors(task)
             if problems:
                 raise PipelineError("resume preflight integrity failure: "+"; ".join(problems))
+            if self.store.running(self.task_id):
+                raise PipelineError("resume refused: unfinished invocation needs reconciliation")
             require_snapshot(task,self.root)
             if task["status"]=="WAITING_EXTERNAL" and task["stage"]=="5.0":
                 task["status"]="READY"
@@ -705,6 +735,7 @@ class Pipeline:
             task=self.store.load(self.task_id)
             if task["status"]!="WAITING_GATE_5_9" or task["stage"]!="gate5.9":
                 raise PipelineError("final report unavailable before Gate 5.9")
+            self._require_trust(task)
             verification=self.verify_evidence()
             if verification["errors"]:
                 raise PipelineError("Gate 5.9 evidence invalid: "+"; ".join(verification["errors"]))

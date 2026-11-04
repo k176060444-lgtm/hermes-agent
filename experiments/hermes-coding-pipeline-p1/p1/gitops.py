@@ -102,17 +102,38 @@ def test_commit_transition(repo: Path, previous: str, current: str) -> tuple[boo
                             capture_output=True,timeout=60)
     if ancestor.returncode:
         return False, []
-    delta=git(repo,"diff","--name-status","--no-renames",previous,current).splitlines()
-    changes=[entry.split("\t",1) for entry in delta]
-    # Tester may add only regular test case modules. No collection-control
-    # files, symlinks, gitlinks, rewrites, deletes or renames.
-    allowed=all(len(item)==2 and item[0]=="A" and test_path(item[1]) for item in changes)
+    # Git's default core.quotePath serializes non-ASCII names with octal
+    # escapes. Parse NUL-separated *bytes* instead: no quotation, tab or
+    # newline ambiguity even with Unicode, spaces and special characters.
+    result=subprocess.run(["git","-C",str(repo),"diff","--name-status","-z",
+                           "--no-renames",previous,current],capture_output=True,timeout=60)
+    if result.returncode:
+        raise ContractError("unable to inspect Tester commit delta")
+    fields=result.stdout.split(b"\0")
+    if fields[-1:] == [b""]:
+        fields.pop()
+    if len(fields)%2:
+        raise ContractError("invalid NUL-delimited Git delta")
+    changes=[(fields[i].decode("ascii","replace"),os.fsdecode(fields[i+1]))
+             for i in range(0,len(fields),2)]
+    delta=[f"{status}\t{filename}" for status,filename in changes]
+    # No collection controllers, symlinks, gitlinks, rewrites, deletions,
+    # renames or non-case files in new Tester commits.
+    allowed=all(status=="A" and test_path(name) for status,name in changes)
     if allowed:
-        for _status, name in changes:
-            entry=git(repo,"ls-tree",current,"--",name).split(None,3)
-            if len(entry)<4 or entry[0] not in ("100644","100755") or entry[1]!= "blob":
-                allowed=False
-                break
+        for _status,name in changes:
+            tree=subprocess.run(["git","-C",str(repo),"ls-tree","-z",current,"--",name],
+                                capture_output=True,timeout=60)
+            if tree.returncode or not tree.stdout.endswith(b"\0"):
+                allowed=False;break
+            entries=tree.stdout[:-1].split(b"\0")
+            if len(entries)!=1 or b"\t" not in entries[0]:
+                allowed=False;break
+            mode_type,actual_name=entries[0].split(b"\t",1)
+            tokens=mode_type.split(b" ")
+            if (len(tokens)!=3 or tokens[0] not in (b"100644",b"100755") or
+                    tokens[1]!=b"blob" or os.fsdecode(actual_name)!=name):
+                allowed=False;break
     return allowed, delta
 
 

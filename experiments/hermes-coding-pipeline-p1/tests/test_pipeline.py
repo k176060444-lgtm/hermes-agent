@@ -120,7 +120,11 @@ def test_orphan_execution_blocks_resume(scenario):
     with pytest.raises(PipelineError):p.resume()
     # Human cannot pretend it is complete just by invoking run.
     out=p.run()
-    assert out["status"]=="WAITING_APPROVAL"  # still gated; orphan to reconcile on active step
+    # R4-003: effective status is now explicit reconciliation even when the
+    # persisted phase was WAITING_APPROVAL; no orphan is silently hidden.
+    assert out["status"]=="NEEDS_RECONCILIATION"
+    assert out["persisted_status"]=="WAITING_APPROVAL"
+    assert out["integrity_preflight"]=="UNFINISHED_RUN"
     p.close()
 
 

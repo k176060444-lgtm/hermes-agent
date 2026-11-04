@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 from .contracts import atomic_write, canonical, ContractError, digest_file, read_json, sha256
@@ -18,6 +19,79 @@ class InvocationError(RuntimeError):
 # This is a code-level integration gate, not a user-controlled JSON field.
 # Stage 2 must implement and independently audit trusted execution provenance.
 TRUSTED_INTEGRATION_EXECUTION_VERIFIED = False
+
+
+# The actual provider/test/A2A evidence protocol is still NOT_VERIFIED.
+# Nevertheless, no subprocess can exhaust the orchestrator's memory by
+# writing unbounded stdout/stderr once trusted integration is enabled.
+MAX_CAPTURE_BYTES_PER_STREAM = 8 * 1024 * 1024
+
+
+def _capture_bounded(argv: list[str], cwd: Path, env: dict[str, str],
+                     timeout_seconds: int, *, limit: int = MAX_CAPTURE_BYTES_PER_STREAM):
+    """Read both output pipes concurrently with an absolute per-stream cap.
+
+    Exceeding the cap kills the direct child and refuses the result. This is
+    NOT a Windows descendant-process guarantee (Stage 2 must verify that).
+    Return (CompletedProcess, capture_metadata); metadata lengths describe
+    bytes actually observed, not the unknown full size of an aborted stream.
+    """
+    if limit < 1 or limit > MAX_CAPTURE_BYTES_PER_STREAM:
+        raise InvocationError('invalid capture limit')
+    child = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    outputs = {"stdout": bytearray(), "stderr": bytearray()}
+    observed = {"stdout": 0, "stderr": 0}
+    truncated = {"stdout": False, "stderr": False}
+    overflow = threading.Event()
+    threads = []
+
+    def drain(stream, name):
+        try:
+            while True:
+                block = stream.read(65536)
+                if not block:
+                    break
+                observed[name] += len(block)
+                remaining = max(0, limit - len(outputs[name]))
+                outputs[name].extend(block[:remaining])
+                if len(block) > remaining:
+                    truncated[name] = True
+                    overflow.set()
+                    try: child.kill()
+                    except OSError: pass
+                    break
+        finally:
+            stream.close()
+
+    for name, stream in (("stdout", child.stdout), ("stderr", child.stderr)):
+        thread = threading.Thread(target=drain, args=(stream, name), daemon=True)
+        thread.start()
+        threads.append(thread)
+    timed_out = False
+    try:
+        child.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        child.kill()
+        child.wait()
+    finally:
+        for thread in threads:
+            thread.join(timeout=10)
+    metadata = {
+        "limit_per_stream_bytes": limit,
+        "stdout_bytes_observed": observed["stdout"],
+        "stderr_bytes_observed": observed["stderr"],
+        "stdout_truncated": truncated["stdout"],
+        "stderr_truncated": truncated["stderr"],
+        "timed_out": timed_out,
+        "output_limit_exceeded": overflow.is_set(),
+        "returncode": child.returncode,
+    }
+    outcome = subprocess.CompletedProcess(argv, child.returncode,
+                                          bytes(outputs["stdout"]),
+                                          bytes(outputs["stderr"]))
+    return outcome, metadata
 
 
 def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run_id: int) -> dict[str, Any]:
@@ -81,17 +155,20 @@ def invoke(task: dict, role: str, stage: str, task_root: Path, attempt: int, run
     env["P1_HARNESS"]=assignment["harness"]
     env["P1_OUTPUT_DIR"]=str(task_root/"artifacts")
     try:
-        outcome=subprocess.run(argv,cwd=workdir,capture_output=True,timeout=int(profile.get("timeout_seconds",900)),env=env)
-    except subprocess.TimeoutExpired as exc:
-        # Exception holds useful partial evidence; save before reconciliation.
-        atomic_write(logs/f"{run_id}.stdout.bin", exc.stdout or b"")
-        atomic_write(logs/f"{run_id}.stderr.bin", exc.stderr or b"")
-        atomic_write(logs/f"{run_id}.timeout.json", canonical({"timeout_seconds":exc.timeout,
-            "stdout_sha256":digest_file(logs/f"{run_id}.stdout.bin"),
-            "stderr_sha256":digest_file(logs/f"{run_id}.stderr.bin")})+"\n")
-        raise InvocationError("runner timed out; external execution state needs reconciliation") from exc
+        outcome, capture = _capture_bounded(argv,workdir,env,int(profile.get("timeout_seconds",900)))
+    except (OSError, ValueError) as exc:
+        raise InvocationError(f"trusted runner could not start: {type(exc).__name__}") from exc
     out=logs/f"{run_id}.stdout.bin"; err=logs/f"{run_id}.stderr.bin"
     atomic_write(out,outcome.stdout); atomic_write(err,outcome.stderr)
+    atomic_write(logs/f"{run_id}.capture.json", canonical({
+        **capture, "stdout_sha256":digest_file(out), "stderr_sha256":digest_file(err)})+"\n")
+    if capture["timed_out"]:
+        atomic_write(logs/f"{run_id}.timeout.json", canonical({
+            "timeout_seconds":int(profile.get("timeout_seconds",900)),
+            **capture,"stdout_sha256":digest_file(out),"stderr_sha256":digest_file(err)})+"\n")
+        raise InvocationError("runner timed out; partial bounded logs saved; needs reconciliation")
+    if capture["output_limit_exceeded"]:
+        raise InvocationError("runner output limit exceeded; bounded logs saved; needs reconciliation")
     if outcome.returncode:
         raise InvocationError(f"runner exit={outcome.returncode}; see logs/{run_id}.stderr.bin")
     try:

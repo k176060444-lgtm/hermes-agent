@@ -29,3 +29,17 @@
 ### Round-002 candidate remediations (independent Round-003 audit pending)
 
 See `ROUND_002_REMEDIATION.md`. Gate0.1 now requires a `souls_sha256` fingerprint in the approval object. No-op remediation requires structured `no_op=true` and a nonblank `no_op_reason` rather than matching English/Chinese substrings. Developer tests are offline fixtures only; they do not establish actual Harness, test receipt, A2A identity or Windows E: readiness. Live subprocess output is not yet size-bounded (R2-008), and a fully privileged actor capable of rewriting an entire local event chain still requires a separate trust anchor.
+
+### Round-004 remediation candidate (independent Round-005 audit pending)
+
+- **R4-001:** Live-mode P1 ledger enforces a single-trusted-OS-identity private
+  task-home boundary (see `p1/trust.py`). The Windows NTFS check is **not yet
+  validated on 21bao**. This is **not a defense against a same-user process**:
+  Worker/Reviewer/Tester must not have the orchestrator's OS identity with
+  access to task home. Otherwise a chain-external HMAC/WORM anchor is required.
+  Integration remains disabled regardless of ACL result.
+- **R4-002/R4-003:** NUL-delimited Git parsing and effective orphan-run
+  reconciliation have isolated regressions.
+- **R2-008:** Direct-child stdout/stderr now have bounded capture and evidence
+  metadata. Real Windows descendant-process cleanup is still NOT_VERIFIED.
+- **R2-006:** External A2A wire receipts and physical identity remain fail closed.
