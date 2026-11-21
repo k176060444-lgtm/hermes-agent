@@ -848,6 +848,25 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
             message_id=msg_id, media_urls=image_urls, media_types=image_media_types,
             timestamp=self._parse_qq_timestamp(timestamp),
         )
+        # E32B R25: expose the *raw C2C user text* and QQ message ID to the
+        # existing authenticated gateway_platform_event boundary. Do not use
+        # event.text (it contains quoted content / STT / attachment summaries).
+        # Only C2C DM may confirm a Coding task; group/guild messages do not.
+        if self._platform_event_handler is not None and qq_chat_type == "c2c" and content.strip():
+            try:
+                await self._platform_event_handler({
+                    "platform": "qqbot", "event_type": "message",
+                    "payload": {
+                        "user_id": str(event.source.user_id or ""),
+                        "chat_id": str(event.source.chat_id or ""),
+                        "chat_type": "dm",
+                        "message_id": msg_id,
+                        "text": content,
+                        "received_at_ms": int(time.time() * 1000),
+                    }
+                }, event.source)
+            except Exception:
+                logger.debug("[%s] E32B R25 QQ event hook failed", self._log_tag, exc_info=True)
         await self.handle_message(event)
 
     # ── Quoted-message handling ──
