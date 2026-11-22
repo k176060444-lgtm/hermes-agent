@@ -153,6 +153,17 @@ class R25QQDualHookTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(consumed)
         self.assertIsNone(reply)
 
+    async def test_uncertain_signer_result_is_handled_not_forwarded_to_agent(self):
+        async def backend(event):
+            return {"status": "SIGNER_OUTCOME_UNCERTAIN"}
+        b = R25QQHookBridge(service=backend)
+        capture(b, text="好")
+        result = await b.on_post_gateway_admission(
+            session_key=SESSION, platform="qqbot", source=source(),
+            message_id="qq-msg-01", text="好")
+        self.assertEqual(result["action"], "handled")
+        self.assertIn("不确定", result["reply"])
+
     async def test_unconfigured_plugin_does_not_consume_any_message(self):
         b = R25QQHookBridge()
         capture(b)
