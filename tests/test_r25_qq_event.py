@@ -84,8 +84,8 @@ class TestR25GatewayAuthorization(unittest.IsolatedAsyncioTestCase):
         normalized = {"platform": "qqbot", "event_type": "message",
                       "payload": {"text": "批准", "message_id": "msg1"}}
         source = SimpleNamespace(user_id="qq-user")
-        with patch("hermes_cli.lifecycle.has_hook", return_value=True) as has_hook, \\
-             patch("hermes_cli.lifecycle.invoke_hook") as invoke:
+        with (patch("hermes_cli.lifecycle.has_hook", return_value=True) as has_hook,
+              patch("hermes_cli.lifecycle.invoke_hook") as invoke):
             await fake._handle_gateway_platform_event(normalized, source)
             invoke.assert_not_called()
             fake.authorized = True
