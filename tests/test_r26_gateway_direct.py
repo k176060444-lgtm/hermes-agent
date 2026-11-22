@@ -124,6 +124,26 @@ class LocalCommand(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"R26_GATEWAY_OUTCOME_UNKNOWN"):
                 local_backend.invoke_local_gateway("--prepare",{},platform="nt")
 
+    def test_runtime_prepare_profile_namespace_comes_from_hermes_api(self):
+        basic={"userId":USER,"chatId":USER,"chatType":"dm"}
+        default=prepare_cli.bind_runtime_proposal(basic,profile="default")
+        main=prepare_cli.bind_runtime_proposal(basic,profile="main")
+        another=prepare_cli.bind_runtime_proposal(basic,profile="worker_agent")
+        self.assertEqual(default["sessionKey"],"agent:main:qqbot:dm:"+USER)
+        self.assertEqual(main["sessionKey"],"agent:main~:qqbot:dm:"+USER)
+        self.assertEqual(another["sessionKey"],"agent:worker_agent:qqbot:dm:"+USER)
+        self.assertNotEqual(default["sessionKey"],main["sessionKey"])
+        self.assertNotIn("sessionKey",basic)
+
+    def test_prepare_mismatched_explicit_session_is_rejected(self):
+        payload={"userId":USER,"chatId":USER,
+                 "sessionKey":"agent:other:qqbot:dm:"+USER}
+        with self.assertRaisesRegex(ValueError,"R26_PREPARE_SESSION_MISMATCH"):
+            prepare_cli.bind_runtime_proposal(payload,profile="xiaoshitou")
+        with self.assertRaisesRegex(ValueError,"R26_PREPARE_ROUTE_INVALID"):
+            prepare_cli.bind_runtime_proposal(
+                {"userId":USER,"chatId":"foreign"},profile="default")
+
     def test_prepare_cli_calls_only_prepare_never_confirm_or_publish(self):
         payload={"request":{"schema":"E32B_REQUEST_V1"},
                  "sessionKey":"agent:other:qqbot:dm:"+USER,
@@ -136,6 +156,7 @@ class LocalCommand(unittest.TestCase):
         with (patch.object(sys,"argv",["prepare_cli","--prepare"]),
               patch.object(prepare_cli.os,"name","nt"),
               patch.dict(os.environ,{"E32B_R26_GATEWAY_APPROVED":"1"}),
+              patch("hermes_cli.profiles.current_profile_name",return_value="other"),
               patch.object(sys,"stdin",input_stream),
               patch.object(sys,"stdout",output),
               patch.object(prepare_cli,"prepare_local_pending",return_value=receipt) as call):
