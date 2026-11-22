@@ -48,11 +48,15 @@ class CapturedQQMessage:
 class R25QQHookBridge:
     def __init__(self, service: Optional[Callable[[dict], Awaitable[dict]]] = None,
                  *, clock: Callable[[], float] = monotonic,
-                 ttl_seconds: float = 120.0, limit: int = 256) -> None:
+                 ttl_seconds: float = 120.0, limit: int = 256,
+                 service_timeout_seconds: float = 18.0) -> None:
         self.service = service
         self.clock = clock
         self.ttl_seconds = ttl_seconds
         self.limit = limit
+        if not 0 < service_timeout_seconds <= 60:
+            raise ValueError('R25_SERVICE_TIMEOUT_INVALID')
+        self.service_timeout_seconds = service_timeout_seconds
         self._lock = RLock()
         self._events: OrderedDict[tuple[str, str], CapturedQQMessage] = OrderedDict()
 
@@ -128,7 +132,7 @@ class R25QQHookBridge:
         try:
             result = self.service(trusted_shape)
             if asyncio.iscoroutine(result) or asyncio.isfuture(result):
-                result = await asyncio.wait_for(result, timeout=18.0)
+                result = await asyncio.wait_for(result, timeout=self.service_timeout_seconds)
         except Exception:
             # No fake approval. Hermes can continue normally on backend failure.
             return None
