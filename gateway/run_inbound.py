@@ -1386,6 +1386,21 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
         if self._is_session_running(_quick_key):
             self._hm_evict_reaped_agent(_quick_key)
         if self._is_session_running(_quick_key):
+            # E32B R25: genuine QQ C2C confirmations must be handled before
+            # busy_input_mode=interrupt/steer/queue consumes the user's reply.
+            # This runs AFTER _hm_admit_event authorization and pending-reply
+            # intercepts. Only the R25-specific hook is invoked: other plugins
+            # do not unexpectedly gain a busy-path message-consumption lane.
+            if (not is_internal and source.platform == Platform.QQBOT and
+                    source.chat_type == "dm" and event.message_id):
+                from gateway.run_inbound_consumer import (
+                    R25_BUSY_HOOK, run_post_admission_hook,
+                )
+                _r25_handled, _r25_reply = await run_post_admission_hook(
+                    self, event, source, _quick_key, hook_name=R25_BUSY_HOOK,
+                )
+                if _r25_handled:
+                    return _r25_reply
             return await self._hm_handle_running_session_message(event, source, _quick_key)
 
         _handled, _result = await self._hm_dispatch_idle_commands(event, source, _quick_key)
