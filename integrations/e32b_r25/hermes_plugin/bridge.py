@@ -11,11 +11,28 @@ This is not an IPC authentication boundary or a signer.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from threading import RLock
 from time import monotonic
 from typing import Any, Awaitable, Callable, Optional
+
+
+# Full session route comes from Hermes Gateway after source authorization.
+# Named profile 'main' is encoded as 'main~'; default profile is 'main'.
+# No configured QQ OpenID or Agent profile is embedded here.
+_PROFILE_NS = re.compile(r"^(?:main~|[A-Za-z0-9_-]{1,60})$")
+
+
+def _runtime_qq_dm_route(session_key: str, user_id: str) -> bool:
+    if not isinstance(session_key, str) or not isinstance(user_id, str):
+        return False
+    parts = session_key.split(":")
+    return (len(parts) == 5 and parts[0] == "agent"
+            and _PROFILE_NS.fullmatch(parts[1]) is not None
+            and parts[2] == "qqbot" and parts[3] == "dm"
+            and parts[4] == user_id)
 
 
 @dataclass(frozen=True)
@@ -86,8 +103,7 @@ class R25QQHookBridge:
         user_id, chat_id = source.get("user_id"), source.get("chat_id")
         if (not isinstance(user_id, str) or not user_id or chat_id != user_id or
                 not isinstance(message_id, str) or
-                not isinstance(session_key, str) or
-                not session_key.endswith(":qqbot:dm:" + user_id)):
+                not _runtime_qq_dm_route(session_key, user_id)):
             return None
 
         with self._lock:
@@ -98,6 +114,9 @@ class R25QQHookBridge:
 
         trusted_shape = {
             "platform": "qqbot", "event_type": "message",
+            # The backend must match this Gateway-owned complete route against
+            # its Pending. It must never infer a profile from Agent text.
+            "gateway_session_key": session_key,
             "payload": {
                 "user_id": original.user_id, "chat_id": original.chat_id,
                 "chat_type": "dm", "message_id": original.message_id,
