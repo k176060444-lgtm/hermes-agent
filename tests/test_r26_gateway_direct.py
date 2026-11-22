@@ -88,6 +88,18 @@ class LocalCommand(unittest.TestCase):
             "r25_qq_busy_confirmation"
         ])
 
+    def test_r26_backend_timeout_exceeds_node_subprocess_budget(self):
+        class FakeCtx:
+            def __init__(self): self.hooks = {}
+            def register_hook(self,name,callback): self.hooks[name] = callback
+        ctx = FakeCtx()
+        register(ctx)
+        hook = ctx.hooks["post_gateway_admission"].__self__
+        self.assertEqual(hook.service_timeout_seconds, 30.0)
+        self.assertGreater(hook.service_timeout_seconds, 25.0)
+        # R25 plugin remains at its independent 18s default.
+        self.assertEqual(R25QQHookBridge().service_timeout_seconds, 18.0)
+
     def test_local_node_exec_has_fixed_verb_no_shell_and_no_password(self):
         result={"schema":"E32B_R26_GATEWAY_PREPARE_V1",
                 "status":"WAIT_USER_CONFIRMATION","qqMessage":"待确认"}
