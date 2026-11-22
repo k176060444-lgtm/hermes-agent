@@ -21,6 +21,11 @@ PRODUCER_CLI = str(
     / R24_COMMIT / "repo" / "07-development" / "R24" / "hermes-entry-cli.mjs"
 )
 _MAX_WIRE_BYTES = 1_048_576
+# Explicit PipeAccessRights.ReadWrite (0x2019B) + SYNCHRONIZE (0x100000).
+# Crucially excludes FILE_CREATE_PIPE_INSTANCE/FILE_APPEND_DATA (0x4).
+# Win32 GENERIC_WRITE implicitly requests 0x4 and will be rejected by the
+# minimally privileged P5Signer pipe DACL. Do not revert to GENERIC_WRITE.
+PIPE_CLIENT_ACCESS = 0x0012019B
 
 
 def _read_exact(handle: Any, size: int) -> bytes:
@@ -48,7 +53,7 @@ def pipe_exchange_once(request: dict) -> dict:
     # WaitNamedPipe bounds connection acquisition, NOT server read latency.
     win32pipe.WaitNamedPipe(PIPE_PATH, 2000)
     handle = win32file.CreateFile(
-        PIPE_PATH, win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+        PIPE_PATH, PIPE_CLIENT_ACCESS,
         0, None, win32file.OPEN_EXISTING, 0, None)
     try:
         win32file.WriteFile(handle, struct.pack(">I", len(raw)) + raw)
