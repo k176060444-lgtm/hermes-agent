@@ -7,3 +7,4 @@ def register(ctx):
     bridge = R25QQHookBridge(service=None)
     ctx.register_hook("gateway_platform_event", bridge.on_gateway_platform_event)
     ctx.register_hook("post_gateway_admission", bridge.on_post_gateway_admission)
+    ctx.register_hook("r25_qq_busy_confirmation", bridge.on_post_gateway_admission)
