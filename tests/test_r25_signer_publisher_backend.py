@@ -6,6 +6,7 @@ import os
 import sys
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 from integrations.e32b_r25.hermes_plugin.backend import R25SignerPublisherBackend
 from integrations.e32b_r25.hermes_plugin import transport, prepare_cli
 
@@ -104,6 +105,34 @@ class R25TransportContractTests(unittest.TestCase):
         self.assertIn(transport.R24_COMMIT,transport.PRODUCER_CLI)
         self.assertTrue(transport.PRODUCER_CLI.endswith(
             r"R24\hermes-entry-cli.mjs"))
+
+    def test_pipe_client_explicit_access_excludes_create_instance(self):
+        # 0x4 is FILE_CREATE_PIPE_INSTANCE / FILE_APPEND_DATA.
+        self.assertEqual(transport.PIPE_CLIENT_ACCESS, 0x0012019B)
+        self.assertEqual(transport.PIPE_CLIENT_ACCESS & 0x4, 0)
+        self.assertEqual(transport.PIPE_CLIENT_ACCESS & 0x3, 0x3)
+        self.assertEqual(transport.PIPE_CLIENT_ACCESS & 0xC0000, 0)
+
+    def test_pipe_client_access_used_for_framed_exchange_with_mock_win32(self):
+        # Only mock APIs: no live pipe, user approval, signer or R24 call.
+        calls = []
+        reply = b'{"status":"NO_MATCHING_PENDING"}'
+        incoming = [len(reply).to_bytes(4, "big"), reply]
+        handle = object()
+        fake_file = SimpleNamespace(
+            OPEN_EXISTING=3,
+            CreateFile=lambda *args: (calls.append(args) or handle),
+            WriteFile=lambda h, data: (0, len(data)),
+            ReadFile=lambda h, size: (0, incoming.pop(0)),
+            CloseHandle=lambda h: None,
+        )
+        fake_pipe = SimpleNamespace(WaitNamedPipe=lambda path, ms: None)
+        with (patch.object(transport.os, "name", "nt"),
+              patch.dict(sys.modules, {"win32file": fake_file, "win32pipe": fake_pipe})):
+            result = transport.pipe_exchange_once({"op":"CONFIRM","schema":"TEST"})
+        self.assertEqual(result["status"], "NO_MATCHING_PENDING")
+        self.assertEqual(calls[0][1], transport.PIPE_CLIENT_ACCESS)
+        self.assertEqual(calls[0][1] & 0x4, 0)
 
     def test_prepare_op_uses_dedicated_schema_without_real_pipe(self):
         proposal={"request":{"schema":"E32B_REQUEST_V1"},"sessionKey":"example"}
