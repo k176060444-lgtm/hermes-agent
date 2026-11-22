@@ -854,6 +854,7 @@ class GatewayBusySessionMixin:
                 self, event, event.source, session_key, hook_name=R25_BUSY_HOOK,
             )
             if _r25_handled:
+                event._gateway_accepted = True
                 if _r25_reply:
                     _reply_adapter = self._delivery_adapter_for(event.source)
                     if _reply_adapter is not None:
