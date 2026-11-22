@@ -12,7 +12,6 @@ from gateway.platforms.event import MessageType
 class TestR25QQGatewayEvent(unittest.IsolatedAsyncioTestCase):
     def make_adapter(self):
         adapter = QQAdapter.__new__(QQAdapter)
-        adapter._log_tag = "r25-isolated"
         adapter._chat_type_map = {}
         adapter._process_attachments = AsyncMock(return_value={
             "voice_transcripts": [], "attachment_info": [],
