@@ -837,6 +837,29 @@ class GatewayBusySessionMixin:
             return True
         if await self._route_plaintext_approval_while_busy(event, session_key):
             return True
+
+        # E32B R25: a real QQ C2C confirmation must be consumed before
+        # queue/steer/interrupt. This is the *adapter active-session* entry
+        # (not only GatewayInboundMixin._handle_message, which some busy
+        # messages bypass entirely). Existing identity/bot admission passed.
+        # A dedicated hook avoids invoking arbitrary post-admission plugins
+        # in the middle of a live Agent turn.
+        if (not getattr(event, "internal", False) and
+                event.source.platform == Platform.QQBOT and
+                event.source.chat_type == "dm" and event.message_id):
+            from gateway.run_inbound_consumer import (
+                R25_BUSY_HOOK, run_post_admission_hook,
+            )
+            _r25_handled, _r25_reply = await run_post_admission_hook(
+                self, event, event.source, session_key, hook_name=R25_BUSY_HOOK,
+            )
+            if _r25_handled:
+                if _r25_reply:
+                    _reply_adapter = self._delivery_adapter_for(event.source)
+                    if _reply_adapter is not None:
+                        await self._send_busy_ack_reply(event, _reply_adapter, _r25_reply)
+                return True
+
         adapter = self._delivery_adapter_for(event.source)
         if not adapter:
             return False  # let default path handle it
