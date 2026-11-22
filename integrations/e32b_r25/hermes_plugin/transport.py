@@ -16,9 +16,9 @@ from typing import Any
 PIPE_PATH = r"\\.\pipe\E32B-R25-Signer"
 NODE_EXE = r"D:\Paseo-pipeline\runtime\node.exe"
 R24_COMMIT = "bedc7b11b4da6b118c4f4f713c1b3ba5934e4a06"
-PRODUCER_CLI = (
-    r"C:\Users\KK\AppData\Local\hermes\hermes-agent\integrations\e32b\"
-    + R24_COMMIT + r"\repo\07-development\R24\hermes-entry-cli.mjs"
+PRODUCER_CLI = str(
+    Path(r"C:\Users\KK\AppData\Local\hermes\hermes-agent\integrations\e32b")
+    / R24_COMMIT / "repo" / "07-development" / "R24" / "hermes-entry-cli.mjs"
 )
 _MAX_WIRE_BYTES = 1_048_576
 
