@@ -32,8 +32,8 @@ def _configured_cli() -> str:
     return value
 
 
-def invoke_local_gateway(op: str, payload: dict) -> dict:
-    if os.name != "nt":
+def invoke_local_gateway(op: str, payload: dict, *, platform: str | None = None) -> dict:
+    if (platform or os.name) != "nt":
         raise RuntimeError("R26_GATEWAY_WINDOWS_REQUIRED")
     if os.environ.get("E32B_R26_GATEWAY_APPROVED") != "1":
         raise RuntimeError("R26_GATEWAY_NOT_ENABLED")
