@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, patch
 from gateway.config import Platform
 from gateway.run_inbound import GatewayInboundMixin
 from gateway.run_busy import GatewayBusySessionMixin
-from gateway.platforms.base import BasePlatformAdapter
+from gateway.platforms.base import BasePlatformAdapter, SendResult
+from gateway.platforms.qqbot.adapter import QQAdapter
 from gateway.run_inbound_consumer import run_post_admission_hook, R25_BUSY_HOOK
 from gateway.session import SessionSource
 
@@ -190,6 +191,42 @@ class R25AdapterRealBusyHandlerTests(unittest.IsolatedAsyncioTestCase):
                 runner, self.event(chat_type="group"), SESSION_KEY)
         self.assertFalse(accepted)
         hook.assert_not_awaited()
+
+    async def test_real_qq_send_serializes_direct_busy_reply_to_official_rest_path(self):
+        # No credentials / HTTP / Gateway process: only the final _post_message
+        # transport boundary is mocked. Runner reply and QQAdapter.send are real.
+        adapter = QQAdapter.__new__(QQAdapter)
+        adapter._app_id = "r25-qq-send-isolated"
+        adapter._markdown_support = False
+        adapter._chat_type_map = {OPENID: "c2c"}
+        adapter._ensure_connected = AsyncMock(return_value=True)
+        adapter._post_message = AsyncMock(return_value=SendResult(
+            success=True, message_id="qq-reply-id"))
+        adapter._send_with_retry = AsyncMock(side_effect=lambda chat_id, content, reply_to=None,
+                                            metadata=None: adapter.send(chat_id, content, reply_to, metadata))
+        runner = self.Runner()
+        runner.adapter = adapter
+        runner._reply_anchor_for_event = lambda ev: ev.message_id
+        runner._thread_metadata_for_source = lambda src, anchor: None
+        runner._busy_reply_to = lambda ev, anchor: ev.message_id
+        runner._send_busy_reply = GatewayBusySessionMixin._send_busy_reply.__get__(
+            runner, type(runner))
+        runner._send_busy_ack_reply = GatewayBusySessionMixin._send_busy_ack_reply.__get__(
+            runner, type(runner))
+        event = self.event()
+        hook = AsyncMock(return_value=(True, "Coding 已发布，尚未确认 Init"))
+        with patch("gateway.run_inbound_consumer.run_post_admission_hook", hook):
+            handled = await GatewayBusySessionMixin._handle_active_session_busy_message(
+                runner, event, SESSION_KEY)
+        self.assertTrue(handled)
+        self.assertTrue(event._gateway_accepted)
+        adapter._post_message.assert_awaited_once()
+        endpoint, payload = adapter._post_message.await_args.args
+        self.assertIn("/v2/users/", endpoint)
+        self.assertIn(OPENID, endpoint)
+        self.assertEqual(payload["content"], "Coding 已发布，尚未确认 Init")
+        self.assertEqual(payload["msg_id"], event.message_id)
+        self.assertEqual(adapter._send_with_retry.await_count, 1)
 
     async def test_base_adapter_active_session_dispatches_to_busy_callback(self):
         class Adapter:
