@@ -109,7 +109,7 @@ class R25QQHookBridge:
         try:
             result = self.service(trusted_shape)
             if asyncio.iscoroutine(result) or asyncio.isfuture(result):
-                result = await asyncio.wait_for(result, timeout=12.0)
+                result = await asyncio.wait_for(result, timeout=18.0)
         except Exception:
             # No fake approval. Hermes can continue normally on backend failure.
             return None
