@@ -202,8 +202,9 @@ class R25AdapterRealBusyHandlerTests(unittest.IsolatedAsyncioTestCase):
         adapter._ensure_connected = AsyncMock(return_value=True)
         adapter._post_message = AsyncMock(return_value=SendResult(
             success=True, message_id="qq-reply-id"))
-        adapter._send_with_retry = AsyncMock(side_effect=lambda chat_id, content, reply_to=None,
-                                            metadata=None: adapter.send(chat_id, content, reply_to, metadata))
+        async def actual_send(chat_id, content, reply_to=None, metadata=None):
+            return await adapter.send(chat_id, content, reply_to, metadata)
+        adapter._send_with_retry = AsyncMock(side_effect=actual_send)
         runner = self.Runner()
         runner.adapter = adapter
         runner._reply_anchor_for_event = lambda ev: ev.message_id
