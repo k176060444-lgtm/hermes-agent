@@ -22,6 +22,7 @@ from typing import Any, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 POST_ADMISSION_HOOK = "post_gateway_admission"
+R25_BUSY_HOOK = "r25_qq_busy_confirmation"
 
 
 def _routed_scope(runner: Any, source: Any):
@@ -32,27 +33,34 @@ def _routed_scope(runner: Any, source: Any):
 
 
 async def run_post_admission_hook(
-    runner: Any, event: Any, source: Any, session_key: str
+    runner: Any, event: Any, source: Any, session_key: str,
+    *, hook_name: str = POST_ADMISSION_HOOK
 ) -> tuple[bool, Optional[str]]:
-    """Return ``(handled, reply)``; ``handled=False`` means run the ordinary agent turn."""
+    """Return ``(handled, reply)``; unhandled leaves the original idle/busy route unchanged.
+
+    The busy variant uses a dedicated R25 hook instead of dispatching all
+    post_gateway_admission plugins into an in-flight Agent message.
+    """
     try:
         async with _routed_scope(runner, source):
             from hermes_cli.lifecycle import ainvoke_hook, has_hook
-            if not has_hook(POST_ADMISSION_HOOK):
+            if hook_name not in (POST_ADMISSION_HOOK, R25_BUSY_HOOK):
+                return False, None
+            if not has_hook(hook_name):
                 return False, None
             results = await ainvoke_hook(
-                POST_ADMISSION_HOOK, session_key=session_key,
+                hook_name, session_key=session_key,
                 platform=source.platform.value if source.platform else "",
                 source=source.to_dict(), message_id=event.message_id, text=event.text or "",
             )
     except asyncio.CancelledError:
         raise
     except Exception:
-        logger.warning("%s failed; continuing with the agent turn", POST_ADMISSION_HOOK, exc_info=True)
+        logger.warning("%s failed; continuing with the normal message path", hook_name, exc_info=True)
         return False, None
     for result in results:
         if isinstance(result, dict) and result.get("action") == "handled":
             reply = result.get("reply")
-            logger.info("%s: a plugin handled the message for session %s", POST_ADMISSION_HOOK, session_key)
+            logger.info("%s: a plugin handled the message for session %s", hook_name, session_key)
             return True, reply if isinstance(reply, str) and reply.strip() else None
     return False, None
