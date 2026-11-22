@@ -3,10 +3,11 @@ No QQ connection, credential, Session DB or production path is accessed.
 """
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from gateway.platforms.qqbot.adapter import QQAdapter
 from gateway.platforms.event import MessageType
+from gateway.run_adapters import GatewayAdapterLifecycleMixin
 
 
 class TestR25QQGatewayEvent(unittest.IsolatedAsyncioTestCase):
@@ -69,6 +70,29 @@ class TestR25QQGatewayEvent(unittest.IsolatedAsyncioTestCase):
                         user_id="open-id", chat_type="dm")
         a._platform_event_handler.assert_not_awaited()
         a.handle_message.assert_awaited_once()
+
+class TestR25GatewayAuthorization(unittest.IsolatedAsyncioTestCase):
+    async def test_runner_gate_allows_only_authorized_source(self):
+        class FakeRunner:
+            _handle_gateway_platform_event = GatewayAdapterLifecycleMixin._handle_gateway_platform_event
+            def __init__(self):
+                self.authorized = False
+            def _is_user_authorized_for_source(self, source):
+                return self.authorized
+
+        fake = FakeRunner()
+        normalized = {"platform": "qqbot", "event_type": "message",
+                      "payload": {"text": "批准", "message_id": "msg1"}}
+        source = SimpleNamespace(user_id="qq-user")
+        with patch("hermes_cli.lifecycle.has_hook", return_value=True) as has_hook, \\
+             patch("hermes_cli.lifecycle.invoke_hook") as invoke:
+            await fake._handle_gateway_platform_event(normalized, source)
+            invoke.assert_not_called()
+            fake.authorized = True
+            await fake._handle_gateway_platform_event(normalized, source)
+            invoke.assert_called_once_with("gateway_platform_event", **normalized)
+            self.assertEqual(has_hook.call_count, 2)
+
 
 
 if __name__ == "__main__":
