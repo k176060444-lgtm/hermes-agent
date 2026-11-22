@@ -1,7 +1,13 @@
 """R25 one-shot signer -> untrusted R24 bridge. No real key or QQ network."""
 import base64
+import io
+import json
+import os
+import sys
 import unittest
+from unittest.mock import patch
 from integrations.e32b_r25.hermes_plugin.backend import R25SignerPublisherBackend
+from integrations.e32b_r25.hermes_plugin import transport, prepare_cli
 
 REQUEST_ID = "TASKBIND01-" + "a" * 24
 
@@ -91,6 +97,41 @@ class R25BackendTests(unittest.IsolatedAsyncioTestCase):
         result=await R25SignerPublisherBackend(signer,publisher)({})
         self.assertEqual(result["status"],"SIGNER_OUTCOME_UNCERTAIN")
         self.assertEqual(called,[])
+
+class R25TransportContractTests(unittest.TestCase):
+    def test_pipe_and_producer_paths_are_fixed(self):
+        self.assertEqual(transport.PIPE_PATH, r"\\.\pipe\E32B-R25-Signer")
+        self.assertIn(transport.R24_COMMIT,transport.PRODUCER_CLI)
+        self.assertTrue(transport.PRODUCER_CLI.endswith(
+            r"R24\hermes-entry-cli.mjs"))
+
+    def test_prepare_op_uses_dedicated_schema_without_real_pipe(self):
+        proposal={"request":{"schema":"E32B_REQUEST_V1"},"sessionKey":"example"}
+        with patch.object(transport,"pipe_exchange_once",return_value={
+            "schema":"E32B_R25_SIGNER_PREPARE_V1",
+            "status":"WAIT_USER_CONFIRMATION"}) as rpc:
+            reply=transport.prepare_pending_once(proposal)
+        self.assertEqual(reply["status"],"WAIT_USER_CONFIRMATION")
+        self.assertEqual(rpc.call_args.args[0]["op"],"PREPARE")
+        self.assertEqual(rpc.call_args.args[0]["proposal"],proposal)
+
+    @unittest.skipUnless(os.name=="nt","Windows CLI activation contract")
+    def test_prepare_cli_opt_in_and_exact_verb(self):
+        proposal={"request":{"schema":"E32B_REQUEST_V1"}}
+        payload=json.dumps(proposal).encode("utf-8")
+        inp=io.TextIOWrapper(io.BytesIO(payload),encoding="utf-8")
+        out=io.StringIO()
+        receipt={"schema":"E32B_R25_SIGNER_PREPARE_V1",
+                 "status":"WAIT_USER_CONFIRMATION","qqMessage":"请批准测试任务"}
+        with (patch.object(sys,"stdin",inp),patch.object(sys,"stdout",out),
+              patch.object(sys,"argv",["prepare_cli","--prepare"]),
+              patch.dict(os.environ,{"E32B_R25_SERVICE_APPROVED":"1"}),
+              patch.object(prepare_cli,"prepare_pending_once",return_value=receipt) as call):
+            exit_code=prepare_cli.main()
+        self.assertEqual(exit_code,0)
+        self.assertEqual(call.call_count,1)
+        self.assertEqual(json.loads(out.getvalue())["status"],"WAIT_USER_CONFIRMATION")
+
 
 if __name__=="__main__":
     unittest.main()
