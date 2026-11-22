@@ -157,6 +157,7 @@ class R25AdapterRealBusyHandlerTests(unittest.IsolatedAsyncioTestCase):
                 runner, event, SESSION_KEY)
         self.assertTrue(accepted)
         self.assertEqual(runner.sent, ["请求已发布，等待 P1 验证"])
+        self.assertTrue(event._gateway_accepted)
         self.assertEqual(hook.await_args.kwargs["hook_name"], R25_BUSY_HOOK)
 
     async def test_adapter_busy_no_pending_defers_to_existing_busy_handler(self):
