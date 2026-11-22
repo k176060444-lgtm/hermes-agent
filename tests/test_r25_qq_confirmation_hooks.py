@@ -39,12 +39,52 @@ class R25QQDualHookTests(unittest.IsolatedAsyncioTestCase):
             message_id="qq-msg-01", text="引用：别人的批准")
         self.assertEqual(result, {"action": "handled", "reply": "已提交，但 Init 尚未确认"})
         self.assertEqual(calls[0]["payload"]["text"], "批准")
+        self.assertEqual(calls[0]["gateway_session_key"], SESSION)
         # One admitted message cannot reuse the same captured event.
         second = await b.on_post_gateway_admission(
             session_key=SESSION, platform="qqbot", source=source(),
             message_id="qq-msg-01", text="批准")
         self.assertIsNone(second)
         self.assertEqual(len(calls), 1)
+
+    async def test_gateway_route_is_forwarded_for_any_profile_no_configured_qq_id(self):
+        for profile in ("main", "main~", "xiaoshitou", "new_agent_21bao"):
+            openid = "qq-test-"+profile.replace("~", "tilde")
+            calls = []
+            async def service(event):
+                calls.append(event)
+                return {"status": "NO_MATCHING_PENDING"}
+            b = R25QQHookBridge(service=service)
+            b.on_gateway_platform_event(
+                platform="qqbot", event_type="message",
+                payload={"user_id": openid, "chat_id": openid,
+                         "chat_type": "dm", "message_id": "qq-msg-"+profile,
+                         "text": "好", "received_at_ms": 1795310000000})
+            session = "agent:"+profile+":qqbot:dm:"+openid
+            result = await b.on_post_gateway_admission(
+                session_key=session, platform="qqbot",
+                source={"user_id": openid, "chat_id": openid, "chat_type": "dm"},
+                message_id="qq-msg-"+profile, text="好")
+            self.assertIsNone(result)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["gateway_session_key"], session)
+            self.assertEqual(calls[0]["payload"]["user_id"], openid)
+
+    async def test_injected_session_key_cannot_approve_using_suffix_only(self):
+        calls = []
+        async def service(event):
+            calls.append(event)
+            return {"status": "PUBLISHED_START_REQUESTED", "qqMessage": "ok"}
+        b = R25QQHookBridge(service=service)
+        for key in ("bad:prefix:qqbot:dm:"+OPENID,
+                    "agent:../x:qqbot:dm:"+OPENID,
+                    "agent:main:qqbot:dm:"+OPENID+":extra"):
+            capture(b, message_id="qq-"+key, text="批准")
+            result = await b.on_post_gateway_admission(
+                session_key=key, platform="qqbot", source=source(),
+                message_id="qq-"+key, text="批准")
+            self.assertIsNone(result)
+        self.assertEqual(calls, [])
 
     async def test_session_role_user_without_raw_event_is_never_approval(self):
         called = []
