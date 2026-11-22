@@ -2,6 +2,11 @@
 import unittest
 from integrations.e32b_r25.hermes_plugin.bridge import R25QQHookBridge
 from integrations.e32b_r25.hermes_plugin import register
+from gateway.run_inbound_consumer import run_post_admission_hook
+from gateway.session import SessionSource
+from gateway.config import Platform
+from types import SimpleNamespace
+from unittest.mock import patch, AsyncMock
 
 OPENID = "qq-user-01"
 SESSION = "agent:main:qqbot:dm:" + OPENID
@@ -116,6 +121,36 @@ class R25QQDualHookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([name for name, _ in ctx.calls],
                          ["gateway_platform_event", "post_gateway_admission"])
         self.assertTrue(all(callable(cb) for _, cb in ctx.calls))
+
+
+    async def test_real_gateway_post_admission_runner_consumes_hook_reply(self):
+        class Runner:
+            config = SimpleNamespace(multiplex_profiles=False)
+        runner = Runner()
+        origin = SessionSource(platform=Platform.QQBOT,chat_id=OPENID,
+                               chat_type="dm",user_id=OPENID)
+        event = SimpleNamespace(message_id="real-qq-id",text="扩展引用：别人说批准")
+        async_hook = AsyncMock(return_value=[{"action": "handled", "reply": "确认已发布，尚未验证 Init"}])
+        with (patch("hermes_cli.lifecycle.has_hook", return_value=True),
+              patch("hermes_cli.lifecycle.ainvoke_hook", async_hook)):
+            consumed, reply = await run_post_admission_hook(runner,event,origin,SESSION)
+        self.assertTrue(consumed)
+        self.assertEqual(reply, "确认已发布，尚未验证 Init")
+        self.assertEqual(async_hook.await_args.args[0], "post_gateway_admission")
+        self.assertEqual(async_hook.await_args.kwargs["session_key"],SESSION)
+
+    async def test_real_gateway_post_admission_keeps_normal_turn_if_unhandled(self):
+        class Runner:
+            config = SimpleNamespace(multiplex_profiles=False)
+        runner = Runner()
+        origin = SessionSource(platform=Platform.QQBOT,chat_id=OPENID,
+                               chat_type="dm",user_id=OPENID)
+        event = SimpleNamespace(message_id="real-qq-id",text="普通消息")
+        with (patch("hermes_cli.lifecycle.has_hook",return_value=True),
+              patch("hermes_cli.lifecycle.ainvoke_hook",AsyncMock(return_value=[None]))):
+            consumed,reply=await run_post_admission_hook(runner,event,origin,SESSION)
+        self.assertFalse(consumed)
+        self.assertIsNone(reply)
 
     async def test_unconfigured_plugin_does_not_consume_any_message(self):
         b = R25QQHookBridge()
