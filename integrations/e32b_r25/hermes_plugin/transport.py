@@ -88,7 +88,7 @@ def publish_r24_once(signed_bytes: bytes) -> dict:
         raise FileNotFoundError("R25_R24_RELEASE_NOT_PROVISIONED")
     result = subprocess.run(
         [NODE_EXE, PRODUCER_CLI, "--submit"], input=signed_bytes,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=8,
         shell=False, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     output = json.loads(result.stdout.decode("utf-8"))
     if not isinstance(output, dict) or result.returncode not in (0, 2):
