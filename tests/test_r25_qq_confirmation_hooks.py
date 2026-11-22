@@ -1,6 +1,7 @@
 """Isolated R25 dual-hook QQ confirmation tests (no QQ connection or signer)."""
 import unittest
 from integrations.e32b_r25.hermes_plugin.bridge import R25QQHookBridge
+from integrations.e32b_r25.hermes_plugin import register
 
 OPENID = "qq-user-01"
 SESSION = "agent:main:qqbot:dm:" + OPENID
@@ -105,6 +106,16 @@ class R25QQDualHookTests(unittest.IsolatedAsyncioTestCase):
             message_id="qq-msg-01", text="批准")
         self.assertEqual(result["action"], "handled")
         self.assertEqual(captured[0]["payload"]["text"], "不批准")
+
+    async def test_source_plugin_registers_both_hooks_without_agent_approval_tool(self):
+        class FakeCtx:
+            def __init__(self): self.calls = []
+            def register_hook(self, name, callback): self.calls.append((name, callback))
+        ctx = FakeCtx()
+        register(ctx)
+        self.assertEqual([name for name, _ in ctx.calls],
+                         ["gateway_platform_event", "post_gateway_admission"])
+        self.assertTrue(all(callable(cb) for _, cb in ctx.calls))
 
     async def test_unconfigured_plugin_does_not_consume_any_message(self):
         b = R25QQHookBridge()
