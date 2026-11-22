@@ -125,6 +125,7 @@ class R25QQHookBridge:
             "MESSAGE_ALREADY_USED": "这条确认消息已处理，不会重复提交任务。",
             "SIGNING_BLOCKED": "确认已收到，但后台签名失败，任务未提交，请核查。",
             "SUBMISSION_UNCERTAIN": "请求提交状态尚不明确，禁止自动重试，请先查询状态。",
+            "SIGNER_OUTCOME_UNCERTAIN": "后台确认结果不确定，请查询任务状态，不要重复授权或提交。",
         }
         message = result.get("qqMessage")
         if not isinstance(message, str) or not message.strip():
