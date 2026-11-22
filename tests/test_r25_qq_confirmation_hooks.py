@@ -119,7 +119,8 @@ class R25QQDualHookTests(unittest.IsolatedAsyncioTestCase):
         ctx = FakeCtx()
         register(ctx)
         self.assertEqual([name for name, _ in ctx.calls],
-                         ["gateway_platform_event", "post_gateway_admission"])
+                         ["gateway_platform_event", "post_gateway_admission",
+                          "r25_qq_busy_confirmation"])
         self.assertTrue(all(callable(cb) for _, cb in ctx.calls))
 
 
