@@ -193,6 +193,10 @@ VALID_HOOKS: set[str] = {
     # hooks.md). Other event types and hook names land here only together with real fire-sites and payload
     # contracts; no inert VALID_HOOKS surface is registered ahead of implementation.
     "gateway_platform_event",
+    # R25: special-purpose QQ short-text approval on a RUNNING session.
+    # Fired after ordinary gateway authorization, before busy queue/steer/interrupt.
+    # Not a general platform-event or Agent approval capability.
+    "r25_qq_busy_confirmation",
     # pre_command: BEFORE a recognized slash command's handler on CLI and gateway canonical dispatch;
     # returns IGNORED in v1. Deliberately NOT fired for the gateway's running-agent intercept path
     # (/stop, /approve, busy_policy) — a slow/hostile plugin must not touch the operator's escape
