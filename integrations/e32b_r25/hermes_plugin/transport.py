@@ -36,13 +36,11 @@ def _read_exact(handle: Any, size: int) -> bytes:
     return b"".join(chunks)
 
 
-def pipe_request_once(event: dict) -> dict:
+def pipe_exchange_once(request: dict) -> dict:
     if os.name != "nt":
         raise OSError("R25_WINDOWS_PIPE_REQUIRED")
     import win32file
     import win32pipe
-    request = {"schema": "E32B_R25_SIGNER_IPC_V1",
-               "op": "CONFIRM", "event": event}
     raw = json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(raw) > _MAX_WIRE_BYTES:
         raise ValueError("R25_PIPE_REQUEST_TOO_LARGE")
@@ -63,6 +61,16 @@ def pipe_request_once(event: dict) -> dict:
         return outcome
     finally:
         win32file.CloseHandle(handle)
+
+
+def pipe_request_once(event: dict) -> dict:
+    return pipe_exchange_once({"schema": "E32B_R25_SIGNER_IPC_V1",
+                               "op": "CONFIRM", "event": event})
+
+
+def prepare_pending_once(proposal: dict) -> dict:
+    return pipe_exchange_once({"schema": "E32B_R25_SIGNER_IPC_V1",
+                               "op": "PREPARE", "proposal": proposal})
 
 
 class NamedPipeSignerClient:
