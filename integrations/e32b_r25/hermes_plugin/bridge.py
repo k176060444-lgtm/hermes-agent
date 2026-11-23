@@ -112,7 +112,14 @@ class R25QQHookBridge:
 
         with self._lock:
             self._expire(self.clock())
-            original = self._events.pop((user_id, message_id), None)
+            # DEF-07: PEEK, not pop. The message can re-enter this hook from
+            # a second lane (busy -> admission fall-through). If the backend
+            # outcome below is definitive the event is dropped; on a
+            # transient/None outcome it is kept so the next lane re-invokes
+            # the backend, whose one-shot ledger turns that into
+            # MESSAGE_ALREADY_USED — never an LLM fallback, never a lost
+            # confirmation, never a double submission.
+            original = self._events.get((user_id, message_id))
         if original is None or original.chat_id != chat_id:
             return None
 
@@ -144,6 +151,7 @@ class R25QQHookBridge:
             return None
         replies = {
             "REJECT_OR_DEFER": "本次 Coding 任务没有获得批准，尚未提交。请明确确认后再继续。",
+            "CANCELLED": "已收到拒绝/取消，该 Coding 任务已关闭，不再等待确认。",
             "MULTIPLE_PENDING_NEED_TASK_ID": "存在多项待确认任务，请回复“批准 <任务ID>”。",
             "MESSAGE_ALREADY_USED": "这条确认消息已处理，不会重复提交任务。",
             "SIGNING_BLOCKED": "确认已收到，但后台签名失败，任务未提交，请核查。",
@@ -158,4 +166,8 @@ class R25QQHookBridge:
             return None
         if not isinstance(message, str) or not message.strip():
             return None
+        with self._lock:
+            # Definitive outcome: drop the correlation so later lanes cannot
+            # re-invoke the backend for the same message.
+            self._events.pop((user_id, message_id), None)
         return {"action": "handled", "reply": message}

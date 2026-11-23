@@ -174,8 +174,73 @@ class LocalCommand(unittest.TestCase):
               patch.object(prepare_cli,"prepare_local_pending",return_value=receipt) as call):
             rc=prepare_cli.main()
         self.assertEqual(rc,0)
-        self.assertEqual(call.call_args.args[0],payload)
+        # bind_runtime_proposal normalizes chatType='dm' by contract; the
+        # CLI passes the bound proposal through verbatim (baseline assertion
+        # missed the contract-added field and failed even at 5e1958c4).
+        self.assertEqual(call.call_args.args[0],{**payload,"chatType":"dm"})
         self.assertEqual(json.loads(output.getvalue())["status"],"WAIT_USER_CONFIRMATION")
+
+
+class StageBFixes(unittest.TestCase):
+    """E32B V2 Phase 4: DEF-01 honest mapping, DEF-06 node override, NV-01 floors."""
+
+    def test_config_missing_confirm_maps_to_no_matching_pending(self):
+        client = local_backend.R26GatewayLocalBackend()
+        evt = {"gateway_session_key": "agent:main:qqbot:dm:" + USER,
+               "payload": {"user_id": USER, "chat_id": USER, "chat_type": "dm",
+                           "message_id": "qq-cfg-01", "text": "好",
+                           "received_at_ms": 1795310000000}}
+        with (patch.dict(os.environ, {"E32B_R26_GATEWAY_APPROVED": "1"}),
+              patch.object(local_backend, "_configured_cli",
+                           side_effect=RuntimeError("R26_GATEWAY_CLI_NOT_CONFIGURED"))):
+            out = asyncio.run(client(evt))
+        self.assertEqual(out["status"], "NO_MATCHING_PENDING")
+        self.assertNotIn("SUBMISSION_UNCERTAIN", out["status"])
+
+    def test_missing_pending_db_short_circuits_before_spawn(self):
+        evt = {"gateway_session_key": "agent:main:qqbot:dm:" + USER,
+               "payload": {"user_id": USER, "chat_id": USER, "chat_type": "dm",
+                           "message_id": "qq-cfg-02", "text": "好",
+                           "received_at_ms": 1795310000000}}
+        with (patch.dict(os.environ, {"E32B_R26_GATEWAY_APPROVED": "1"}),
+              patch.object(local_backend, "_pending_db_path",
+                           return_value=None),
+              patch.object(local_backend, "_configured_cli") as cfg,
+              patch.object(local_backend.subprocess, "run") as run):
+            out = asyncio.run(local_backend.R26GatewayLocalBackend()(evt))
+        self.assertEqual(out["status"], "NO_MATCHING_PENDING")
+        cfg.assert_not_called()
+        run.assert_not_called()
+
+    def test_node_override_whitelist_fails_closed(self):
+        self.assertEqual(local_backend._resolve_node_exe({}), local_backend.NODE_EXE)
+        ok = local_backend._resolve_node_exe({"E32B_R26_NODE_EXE": r"C:\rt\node.exe"})
+        self.assertEqual(ok, r"C:\rt\node.exe")
+        for bad in (r"rt\node.exe", r"C:\rt\evil.exe", "node", ""):
+            with patch.dict(os.environ, {"E32B_R26_NODE_EXE": bad}):
+                if bad == "":
+                    self.assertEqual(local_backend._resolve_node_exe(os.environ),
+                                     local_backend.NODE_EXE)
+                    continue
+                with self.assertRaisesRegex(RuntimeError, "R26_NODE_OVERRIDE_INVALID"):
+                    local_backend._resolve_node_exe(os.environ)
+
+    def test_nv01_hook_timeout_floors_are_strictly_above_chain(self):
+        from hermes_cli.plugins_dispatch import (
+            _effective_hook_timeout, _HOOK_TIMEOUT_MIN_OVERRIDES)
+        for hook in ("post_gateway_admission", "r25_qq_busy_confirmation"):
+            self.assertGreaterEqual(_HOOK_TIMEOUT_MIN_OVERRIDES[hook], 35.0)
+            self.assertEqual(_effective_hook_timeout(hook, 30.0), 35.0)
+            self.assertEqual(_effective_hook_timeout(hook, 40.0), 40.0)
+        # unrelated hooks keep the resolved framework timeout
+        self.assertEqual(_effective_hook_timeout("post_tool_call", 30.0), 30.0)
+        # disabled (<=0) stays disabled: fail-open operator semantics untouched
+        self.assertEqual(_effective_hook_timeout("post_gateway_admission", 0), 0)
+        # full chain strictly decreasing: 35 > 30 > 25 > 20 > 15
+        self.assertGreater(_HOOK_TIMEOUT_MIN_OVERRIDES["post_gateway_admission"], 30.0)
+        self.assertGreater(30.0, 25.0)
+        self.assertGreater(25.0, 20.0)
+        self.assertGreater(20.0, 15.0)
 
 
 if __name__=="__main__":

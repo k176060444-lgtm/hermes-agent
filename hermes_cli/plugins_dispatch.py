@@ -49,6 +49,23 @@ _HOOK_TIMEOUT_BOUNDED_HOOKS: set[str] = {
 
 # Policy hooks: timeout / still-running must fail closed (block the tool).
 _HOOK_TIMEOUT_FAIL_CLOSED_HOOKS: set[str] = {"pre_tool_call"}
+# E32B R26 (NV-01): the QQ confirmation bridge awaits a local Node subprocess
+# with a 25s budget inside its own 30s wait_for; the framework must strictly
+# outlive that chain (>=35s here > 30s bridge > 25s backend > 20s producer
+# > 15s schtasks). Applies only while the bounded path is active (timeout>0).
+_HOOK_TIMEOUT_MIN_OVERRIDES: dict[str, float] = {
+    "post_gateway_admission": 35.0,
+    "r25_qq_busy_confirmation": 35.0,
+}
+
+
+def _effective_hook_timeout(hook_name: str, timeout: float) -> float:
+    """Raised floor for specific bounded hooks (NV-01); a disabled (<=0)
+    timeout stays disabled so operator fail-open semantics are untouched."""
+    override = _HOOK_TIMEOUT_MIN_OVERRIDES.get(hook_name)
+    if override is None or timeout <= 0:
+        return timeout
+    return max(timeout, override)
 # Documented parent-thread serialization contract — never run on a timeout worker (hooks.md).
 _HOOK_CALLER_THREAD_HOOKS: set[str] = {"subagent_stop"}
 # After a timeout, suppress the same callback this long so a hung hook cannot pile up threads.
@@ -223,7 +240,7 @@ class PluginDispatchMixin:
         if hook_name != "gateway_platform_event":
             kwargs.setdefault("telemetry_schema_version", OBSERVER_SCHEMA_VERSION)
         results: list[Any] = []
-        timeout = _resolve_hook_callback_timeout()
+        timeout = _effective_hook_timeout(hook_name, _resolve_hook_callback_timeout())
         use_timeout = _hook_uses_callback_timeout(hook_name, timeout)
         fail_closed = hook_name in _HOOK_TIMEOUT_FAIL_CLOSED_HOOKS
         for cb in self._hooks.get(hook_name, []):
@@ -497,7 +514,7 @@ class PluginDispatchMixin:
         if hook_name != "gateway_platform_event":
             kwargs.setdefault("telemetry_schema_version", OBSERVER_SCHEMA_VERSION)
         results: list[Any] = []
-        timeout = _resolve_hook_callback_timeout()
+        timeout = _effective_hook_timeout(hook_name, _resolve_hook_callback_timeout())
         use_timeout = _hook_uses_callback_timeout(hook_name, timeout)
         fail_closed = hook_name in _HOOK_TIMEOUT_FAIL_CLOSED_HOOKS
         for cb in self._hooks.get(hook_name, []):

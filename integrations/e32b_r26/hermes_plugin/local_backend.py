@@ -19,6 +19,43 @@ _OP_SCHEMAS = {
     "--prepare": "E32B_R26_GATEWAY_PREPARE_V1",
     "--confirm": "E32B_R26_GATEWAY_CONFIRM_V1",
 }
+# DEF-01: a configuration defect must never be reported as a submission
+# uncertainty (that would fake "a claim may have been consumed") and must
+# never hijack an ordinary QQ conversation. These codes mean "nothing was
+# consumed; treat the message as having no matching pending".
+_CONFIG_MISSING_CODES = (
+    "R26_GATEWAY_CLI_NOT_CONFIGURED",
+    "R26_GATEWAY_CLI_PATH_UNEXPECTED",
+    "R26_GATEWAY_NOT_ENABLED",
+    "R26_GATEWAY_WINDOWS_REQUIRED",
+    "R26_NODE_OVERRIDE_INVALID",
+)
+
+
+def _resolve_node_exe(env: dict | None = None) -> str:
+    """DEF-06: controlled host override of the pinned Node executable.
+
+    The default pin is unchanged for existing security tests. An override is
+    accepted only when it is an absolute path whose executable name is in the
+    whitelist; anything else fails closed.
+    """
+    env = os.environ if env is None else env
+    value = env.get("E32B_R26_NODE_EXE", "")
+    if not value:
+        return NODE_EXE
+    path = Path(value)
+    if not path.is_absolute() or path.name.lower() not in ("node.exe", "node"):
+        raise RuntimeError("R26_NODE_OVERRIDE_INVALID")
+    return value
+
+
+def _pending_db_path(env: dict | None = None) -> Path | None:
+    """Host-level Pending SQLite location (mirrors host-key.mjs gatewayStatePaths)."""
+    env = os.environ if env is None else env
+    appdata = env.get("LOCALAPPDATA", "")
+    if not isinstance(appdata, str) or not appdata:
+        return None
+    return Path(appdata) / "Paseo" / "E32B-R26" / "pending.sqlite"
 
 
 def _configured_cli() -> str:
@@ -42,8 +79,16 @@ def invoke_local_gateway(op: str, payload: dict, *, platform: str | None = None)
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if not raw or len(raw) > _MAX_WIRE:
         raise ValueError("R26_GATEWAY_INPUT_TOO_LARGE")
+    node_exe = _resolve_node_exe()
+    if op == "--confirm":
+        pending_db = _pending_db_path()
+        if pending_db is None or not pending_db.is_file():
+            # DEF-01: without a Pending store nothing was ever registered or
+            # consumed — a plain private chat must pass through untouched.
+            return {"schema": _OP_SCHEMAS[op], "status": "NO_MATCHING_PENDING",
+                    "qqMessage": None}
     proc = subprocess.run(
-        [NODE_EXE, _configured_cli(), op],
+        [node_exe, _configured_cli(), op],
         input=raw, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         timeout=25, shell=False, check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -75,7 +120,12 @@ class R26GatewayLocalBackend:
         try:
             result = await asyncio.to_thread(invoke_local_gateway,
                                              "--confirm", admitted_event)
-        except Exception:
+        except Exception as exc:
+            text = str(exc)
+            if any(code in text for code in _CONFIG_MISSING_CODES):
+                # DEF-01: configuration defects consumed nothing; answer
+                # honestly so the ordinary message flow is not hijacked.
+                return {"status": "NO_MATCHING_PENDING", "qqMessage": None}
             # A claim might have been durably consumed before output was lost.
             # Never auto-retry one user confirmation or one R24 publication.
             return {"status": "SUBMISSION_UNCERTAIN",
