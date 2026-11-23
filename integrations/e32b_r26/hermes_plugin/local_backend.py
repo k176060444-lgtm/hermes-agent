@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -43,6 +44,11 @@ def _resolve_node_exe(env: dict | None = None) -> str:
     value = env.get("E32B_R26_NODE_EXE", "")
     if not value:
         return NODE_EXE
+    # REV-05: local drive letters only — UNC (\\server\\share) and any control
+    # characters fail closed before the basename whitelist.
+    if (not re.match(r"^[A-Za-z]:\\", value) or
+            any(ord(c) < 32 for c in value)):
+        raise RuntimeError("R26_NODE_OVERRIDE_INVALID")
     path = Path(value)
     if not path.is_absolute() or path.name.lower() not in ("node.exe", "node"):
         raise RuntimeError("R26_NODE_OVERRIDE_INVALID")

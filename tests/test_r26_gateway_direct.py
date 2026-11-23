@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from integrations.e32b_r26.hermes_plugin import register, create_opt_in_backend
@@ -185,17 +186,27 @@ class StageBFixes(unittest.TestCase):
     """E32B V2 Phase 4: DEF-01 honest mapping, DEF-06 node override, NV-01 floors."""
 
     def test_config_missing_confirm_maps_to_no_matching_pending(self):
+        """REV-04: the pending DB EXISTS here; the failure must come from the
+        real _configured_cli() call (asserted invoked exactly once), proving
+        the _CONFIG_MISSING_CODES branch — not a missing-DB short circuit."""
+        import tempfile
         client = local_backend.R26GatewayLocalBackend()
         evt = {"gateway_session_key": "agent:main:qqbot:dm:" + USER,
                "payload": {"user_id": USER, "chat_id": USER, "chat_type": "dm",
                            "message_id": "qq-cfg-01", "text": "好",
                            "received_at_ms": 1795310000000}}
-        with (patch.dict(os.environ, {"E32B_R26_GATEWAY_APPROVED": "1"}),
-              patch.object(local_backend, "_configured_cli",
-                           side_effect=RuntimeError("R26_GATEWAY_CLI_NOT_CONFIGURED"))):
-            out = asyncio.run(client(evt))
+        with tempfile.TemporaryDirectory() as tmp:
+            pending_db = os.path.join(tmp, "pending.sqlite")
+            open(pending_db, "wb").close()  # real, existing ledger file
+            with (patch.dict(os.environ, {"E32B_R26_GATEWAY_APPROVED": "1"}),
+                  patch.object(local_backend, "_pending_db_path",
+                               return_value=Path(pending_db)),
+                  patch.object(local_backend, "_configured_cli",
+                               side_effect=RuntimeError(
+                                   "R26_GATEWAY_CLI_NOT_CONFIGURED")) as cfg):
+                out = asyncio.run(client(evt))
         self.assertEqual(out["status"], "NO_MATCHING_PENDING")
-        self.assertNotIn("SUBMISSION_UNCERTAIN", out["status"])
+        self.assertEqual(cfg.call_count, 1)
 
     def test_missing_pending_db_short_circuits_before_spawn(self):
         evt = {"gateway_session_key": "agent:main:qqbot:dm:" + USER,
@@ -216,14 +227,16 @@ class StageBFixes(unittest.TestCase):
         self.assertEqual(local_backend._resolve_node_exe({}), local_backend.NODE_EXE)
         ok = local_backend._resolve_node_exe({"E32B_R26_NODE_EXE": r"C:\rt\node.exe"})
         self.assertEqual(ok, r"C:\rt\node.exe")
-        for bad in (r"rt\node.exe", r"C:\rt\evil.exe", "node", ""):
-            with patch.dict(os.environ, {"E32B_R26_NODE_EXE": bad}):
-                if bad == "":
-                    self.assertEqual(local_backend._resolve_node_exe(os.environ),
-                                     local_backend.NODE_EXE)
-                    continue
+        bad = (r"rt\node.exe", r"C:\rt\evil.exe", "node",
+               r"\\server\share\node.exe",   # REV-05: UNC rejected
+               "C:\x01\rt\node.exe")         # REV-05: control char rejected
+        for value in bad:
+            with patch.dict(os.environ, {"E32B_R26_NODE_EXE": value}):
                 with self.assertRaisesRegex(RuntimeError, "R26_NODE_OVERRIDE_INVALID"):
                     local_backend._resolve_node_exe(os.environ)
+        with patch.dict(os.environ, {"E32B_R26_NODE_EXE": ""}):
+            self.assertEqual(local_backend._resolve_node_exe(os.environ),
+                             local_backend.NODE_EXE)
 
     def test_nv01_hook_timeout_floors_are_strictly_above_chain(self):
         from hermes_cli.plugins_dispatch import (
